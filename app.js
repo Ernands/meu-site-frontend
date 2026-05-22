@@ -679,6 +679,16 @@ async function uploadPhysicalContractWithApi(id, file) {
   return applyApiMutationResult(apiResult);
 }
 
+async function createReservationPaymentWithApi(id, payment) {
+  if (!state.apiConnected) return ensureLocalFallbackAvailable();
+
+  const apiResult = await apiMutationWithStore(`/reservations/${encodeURIComponent(id)}/payments`, {
+    method: "POST",
+    body: JSON.stringify(payment),
+  });
+  return applyApiMutationResult(apiResult);
+}
+
 async function syncServiceFeesWithApi(serviceFees) {
   if (!state.apiConnected) return ensureLocalFallbackAvailable();
 
@@ -859,6 +869,24 @@ function normalizeReservation(entry) {
     replacementFee: entry.replacementFee || 0,
     financeNotes: entry.financeNotes || "",
     clientCorrectionNote: entry.clientCorrectionNote || "",
+    payments: (entry.payments || []).map(normalizeReservationPayment),
+  };
+}
+
+function normalizeReservationPayment(payment = {}) {
+  return {
+    id: payment.id || "",
+    reservationId: payment.reservationId || "",
+    amount: financialNumber(payment.amount),
+    paymentMethod: payment.paymentMethod || "",
+    paidAt: payment.paidAt || "",
+    fileName: payment.fileName || "",
+    fileType: payment.fileType || "",
+    fileUrl: payment.fileUrl || "",
+    createdByUserId: payment.createdByUserId || "",
+    createdByRole: payment.createdByRole || "",
+    createdByName: payment.createdByName || "",
+    createdAt: payment.createdAt || "",
   };
 }
 
@@ -1286,6 +1314,34 @@ function readPhysicalContractFile(file) {
   });
 }
 
+function readPaymentReceiptFile(file) {
+  if (!file) return Promise.resolve({ name: "", type: "", data: "" });
+  const allowedTypes = ["application/pdf", "image/jpeg", "image/png"];
+  const allowedExtensions = [".pdf", ".jpg", ".jpeg", ".png"];
+  const extension = `.${String(file.name || "").split(".").pop()}`.toLowerCase();
+  const isAllowed = allowedTypes.includes(file.type) || allowedExtensions.includes(extension);
+  const maxBytes = 8 * 1024 * 1024;
+
+  if (!isAllowed) {
+    const error = new Error("Formato de comprovante invalido.");
+    error.userMessage = "Anexe um comprovante em PDF, JPG, JPEG ou PNG.";
+    throw error;
+  }
+
+  if (file.size > maxBytes) {
+    const error = new Error("Comprovante muito grande.");
+    error.userMessage = "O comprovante deve ter no maximo 8 MB.";
+    throw error;
+  }
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve({ name: file.name, type: file.type || "application/octet-stream", data: reader.result });
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 async function toggleKitAddon(kind, id) {
   const collection = kind === "kit" ? store.kits : store.addons;
   const entry = collection.find((row) => row.id === id);
@@ -1502,6 +1558,7 @@ async function savePaymentMethodFromForm(form) {
 
   if (await syncPaymentMethodWithApi(entry)) {
     state.editingPaymentMethodId = "";
+    state.modal = null;
     return true;
   }
 
@@ -1509,6 +1566,7 @@ async function savePaymentMethodFromForm(form) {
   if (index >= 0) store.paymentMethods[index] = entry;
   else store.paymentMethods.push(entry);
   state.editingPaymentMethodId = "";
+  state.modal = null;
   saveStore();
   return true;
 }
@@ -2046,7 +2104,6 @@ function refreshOperationalStatuses() {
 
 function renderLogin() {
   const companyName = escapeHtml(store.company.name);
-  const companyTagline = escapeHtml(store.company.tagline || "Decorações afetivas para celebrações com alma");
   app.innerHTML = `
     <main class="auth-layout">
       <section class="brand-panel">
@@ -2054,7 +2111,8 @@ function renderLogin() {
           <img class="brand-logo-large" src="assets/atelie-lica-logo.png" alt="${companyName}" />
           <p class="brand-kicker">Atelier boutique de celebrações</p>
           <h1 class="brand-name">${companyName}</h1>
-          <p class="brand-lede">${companyTagline}. Um portal delicado para escolher kits, acompanhar propostas, sinal e contratos com a mesma atenção de uma decoração feita à mão.</p>
+          <div class="brand-divider" aria-hidden="true"><span></span></div>
+          <p class="brand-lede">Seu momento merece cuidado e encanto em cada detalhe.</p>
           <div class="brand-notes" aria-label="Diferenciais do Ateliê">
             <span>Curadoria delicada</span>
             <span>Organização clara</span>
@@ -2062,7 +2120,7 @@ function renderLogin() {
           </div>
         </div>
         <div class="hero-art-card">
-          <canvas class="hero-canvas" id="heroCanvas" width="900" height="675" aria-label="Ilustração de kit festa"></canvas>
+          <img class="hero-login-image" src="assets/imagem_login_atelie_lica.png" alt="Mesa decorada com balões, flores e bolo em tons rosé e champagne" />
           <div class="hero-caption">
             <strong>Festas com afeto</strong>
             <span>Do primeiro orçamento à assinatura, tudo em um fluxo acolhedor.</span>
@@ -2072,18 +2130,29 @@ function renderLogin() {
       <section class="auth-panel">
         ${state.authView === "register" ? renderRegistrationRequestForm() : `
         <form class="login-box" id="loginForm" autocomplete="off">
+          <div class="login-emblem" aria-hidden="true">${loginIcon("sparkle")}</div>
           <h2>Entrar no sistema</h2>
           <p>Acesse com CPF e senha para continuar o fluxo.</p>
-          <div class="field">
+          <div class="login-divider" aria-hidden="true"><span></span></div>
+          <div class="field login-field">
             <label for="loginCredential">CPF ou login</label>
-            <input id="loginCredential" name="login" data-login-credential data-no-autofill type="text" value="" autocomplete="off" autocapitalize="none" spellcheck="false" readonly required />
+            <div class="login-input-shell">
+              <span class="login-input-icon" aria-hidden="true">${loginIcon("user")}</span>
+              <input id="loginCredential" name="login" data-login-credential data-no-autofill type="text" value="" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Digite seu CPF ou login" readonly required />
+            </div>
           </div>
-          <div class="field">
+          <div class="field login-field">
             <label for="loginPassword">Senha</label>
-            <input id="loginPassword" name="password" data-no-autofill type="password" value="" autocomplete="new-password" readonly required />
+            <div class="login-input-shell">
+              <span class="login-input-icon" aria-hidden="true">${loginIcon("lock")}</span>
+              <input id="loginPassword" name="password" data-no-autofill type="password" value="" autocomplete="new-password" placeholder="Digite sua senha" readonly required />
+              <button class="password-toggle" type="button" data-toggle-password="loginPassword" aria-label="Mostrar senha">${loginIcon("eye")}</button>
+            </div>
           </div>
-          <button class="primary-button" type="submit">Entrar</button>
-          <button class="secondary-button auth-link-button" type="button" data-action="show-register">Cadastrar-se</button>
+          <div class="login-actions">
+            <button class="primary-button" type="submit">Entrar</button>
+            <button class="secondary-button auth-link-button" type="button" data-action="show-register">Cadastrar-se</button>
+          </div>
         </form>
         `}
       </section>
@@ -2091,6 +2160,16 @@ function renderLogin() {
   `;
   drawHeroArt();
   if (state.authView !== "register") clearLoginAutofill();
+}
+
+function loginIcon(name) {
+  const icons = {
+    user: `<svg viewBox="0 0 24 24" focusable="false"><path d="M20 21a8 8 0 0 0-16 0" /><circle cx="12" cy="7" r="4" /></svg>`,
+    lock: `<svg viewBox="0 0 24 24" focusable="false"><rect x="5" y="10" width="14" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /><path d="M12 14v3" /></svg>`,
+    sparkle: `<svg viewBox="0 0 24 24" focusable="false"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3Z" /><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15Z" /><path d="M5 4l.6 1.6L7 6l-1.4.4L5 8l-.6-1.6L3 6l1.4-.4L5 4Z" /></svg>`,
+    eye: `<svg viewBox="0 0 24 24" focusable="false"><path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></svg>`,
+  };
+  return icons[name] || "";
 }
 
 function clearLoginAutofill() {
@@ -2177,14 +2256,14 @@ function renderNav() {
   if (state.user.role === "admin") {
     return [
       ["dashboard", "Dashboard"],
-      ["novo-orcamento", "Novo orçamento"],
       ["reservas", "Reservas"],
       ["financeiro", "Financeiro"],
       ["clientes", "Clientes"],
-      ["acessos", "Acessos"],
+      ["estoque", "Estoque"],
       ["kit-adicionais", "Kit e Adicionais"],
       ["temas", "Temas"],
-      ["estoque", "Estoque"],
+      ["acessos", "Acessos"],
+      ["novo-orcamento", "Novo orçamento"],
     ]
       .map(([id, label]) => `<button class="tab-button ${state.adminTab === id ? "active" : ""}" data-admin-tab="${id}">${label}</button>`)
       .join("");
@@ -2619,8 +2698,8 @@ function renderStepRequestReservation() {
     `;
   }
   return `
-    <div class="workspace-grid">
-      <section class="panel">
+    <div class="admin-reservations-layout">
+      <section class="panel reservations-list-panel">
         <div class="panel-header"><h3>4. Solicitar Reserva - Sinal</h3>${statusPill(status)}</div>
         <div class="panel-body">
           ${lockedReservation ? renderSubmittedReservationView(reservation) : `${renderSelectedItemsPanel(selectedKit)}${renderReservationRequestForm()}`}
@@ -2631,7 +2710,7 @@ function renderStepRequestReservation() {
           }
         </div>
       </section>
-      <aside class="panel">
+      <aside class="panel reservation-detail-panel">
         <div class="panel-header"><h3>Resumo de valores</h3></div>
         <div class="panel-body">${lockedReservation ? renderReservationValueSummary(reservation) : renderJourneyBudgetSummary()}</div>
       </aside>
@@ -3916,6 +3995,7 @@ function renderAdminDashboard() {
       ${metric("Entregar/retirada", delivered)}
       ${metric("Devolução/buscar", returns)}
       ${metric("Pagamento pendente", finance.pendingReservations)}
+      ${metric("Total Entrada", money(finance.totalReceived))}
       ${metric("Receita prevista", money(finance.revenue))}
       ${metric("Sinais recebidos", money(finance.deposits))}
       ${metric("Total em aberto", money(finance.finalDue))}
@@ -3998,8 +4078,6 @@ function registrationStatusBadge(status) {
 function renderAdminFinance() {
   const summary = financialSummary();
   const rows = filteredFinanceReservations();
-  const financeRows = financialReservations();
-  const selected = financeRows.find((entry) => entry.id === state.selectedReservationId) || rows[0] || financeRows[0];
   return `
     <section class="section-title">
       <div>
@@ -4008,6 +4086,7 @@ function renderAdminFinance() {
       </div>
     </section>
     <div class="dashboard-grid">
+      ${metric("Total Entrada", money(summary.totalReceived))}
       ${metric("Receita prevista", money(summary.revenue))}
       ${metric("Sinais recebidos", money(summary.deposits))}
       ${metric("Saldo em aberto", money(summary.balanceDue))}
@@ -4020,36 +4099,34 @@ function renderAdminFinance() {
       <div class="panel-body">${renderFinanceFilters()}</div>
     </section>
     ${renderPaymentMethodsManager()}
-    <div class="workspace-grid" style="margin-top: 18px">
-      <section class="panel">
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Reserva</th>
-                <th>Cliente</th>
-                <th>Kit/Tema</th>
-                <th>Data do evento</th>
-                <th>Status</th>
-                <th>Valor total</th>
-                <th>Sinal pago</th>
-                <th>Saldo restante</th>
-                <th>Avarias</th>
-                <th>Reposição</th>
-                <th>Total pendente</th>
-                <th>Forma de pagamento</th>
-                <th>Ações</th>
-              </tr>
-            </thead>
-            <tbody>${rows.length ? rows.map(renderFinanceRow).join("") : `<tr><td colspan="13"><div class="empty-state">Nenhuma reserva encontrada para os filtros.</div></td></tr>`}</tbody>
-          </table>
-        </div>
-      </section>
-      <aside class="panel">
-        <div class="panel-header"><h3>Detalhe financeiro</h3></div>
-        <div class="panel-body">${selected ? renderFinanceDetail(selected) : `<div class="empty-state">Selecione uma reserva.</div>`}</div>
-      </aside>
-    </div>
+    <section class="panel finance-table-panel" style="margin-top: 18px">
+      <div class="panel-header">
+        <h3>Reservas financeiras</h3>
+        <span class="small-note">${rows.length} reserva(s) encontrada(s)</span>
+      </div>
+      <div class="table-wrap">
+        <table class="finance-table">
+          <thead>
+            <tr>
+              <th>Reserva</th>
+              <th>Cliente</th>
+              <th>Kit/Tema</th>
+              <th>Data do evento</th>
+              <th>Status</th>
+              <th>Valor total</th>
+              <th>Sinal pago</th>
+              <th>Saldo restante</th>
+              <th>Avarias</th>
+              <th>Reposição</th>
+              <th>Total pendente</th>
+              <th>Forma de pagamento</th>
+              <th>Ações</th>
+            </tr>
+          </thead>
+          <tbody>${rows.length ? rows.map(renderFinanceRow).join("") : `<tr><td colspan="13"><div class="empty-state">Nenhuma reserva encontrada para os filtros.</div></td></tr>`}</tbody>
+        </table>
+      </div>
+    </section>
   `;
 }
 
@@ -4095,8 +4172,6 @@ function renderFinanceFilters() {
 }
 
 function renderPaymentMethodsManager() {
-  const editing = store.paymentMethods.find((entry) => entry.id === state.editingPaymentMethodId) || createEmptyPaymentMethod();
-  const isEditing = Boolean(editing.id);
   return `
     <section class="panel" style="margin-top: 18px">
       <div class="panel-header">
@@ -4104,48 +4179,6 @@ function renderPaymentMethodsManager() {
         <button class="secondary-button" data-action="new-payment-method">Nova forma</button>
       </div>
       <div class="panel-body">
-        <form id="paymentMethodForm" data-id="${escapeAttr(editing.id || "")}" novalidate>
-          <div class="form-grid">
-            <div class="field">
-              <label for="paymentName">Nome</label>
-              <input id="paymentName" name="name" type="text" value="${escapeHtml(editing.name || "")}" placeholder="PIX, Cartao, Transferencia" required />
-            </div>
-            <div class="field">
-              <label for="paymentType">Tipo</label>
-              <select id="paymentType" name="type">
-                ${paymentMethodTypeOptions().map(([value, label]) => optionMarkup(value, editing.type, label)).join("")}
-              </select>
-            </div>
-            <div class="field">
-              <label for="paymentPixKey">Chave PIX</label>
-              <input id="paymentPixKey" name="pixKey" type="text" value="${escapeHtml(editing.pixKey || "")}" />
-            </div>
-            <div class="field">
-              <label for="paymentPixName">Recebedor PIX</label>
-              <input id="paymentPixName" name="pixName" type="text" value="${escapeHtml(editing.pixName || "")}" />
-            </div>
-            <div class="field">
-              <label for="paymentPixCity">Cidade PIX</label>
-              <input id="paymentPixCity" name="pixCity" type="text" value="${escapeHtml(editing.pixCity || "")}" />
-            </div>
-            <div class="field">
-              <label for="paymentBank">Banco/dados auxiliares</label>
-              <input id="paymentBank" name="bank" type="text" value="${escapeHtml(editing.bank || "")}" />
-            </div>
-            <div class="field full-span">
-              <label for="paymentInstructions">Orientacoes para o cliente</label>
-              <textarea id="paymentInstructions" name="instructions">${escapeHtml(editing.instructions || "")}</textarea>
-            </div>
-            <label class="choice-option full-span">
-              <input type="checkbox" name="enabled" ${editing.enabled !== false ? "checked" : ""} />
-              Forma ativa para clientes
-            </label>
-          </div>
-          <div class="actions">
-            <button class="primary-button" type="submit" ${pendingDisabledAttr()}>${pendingLabel("save-payment-method", isEditing ? "Salvar forma" : "Criar forma", "Salvando...")}</button>
-            ${isEditing ? `<button class="secondary-button" type="button" data-action="new-payment-method">Cancelar edicao</button>` : ""}
-          </div>
-        </form>
         <div class="payment-admin-list">
           ${store.paymentMethods.length ? store.paymentMethods.map(renderPaymentMethodAdminCard).join("") : `<div class="empty-state">Nenhuma forma cadastrada.</div>`}
         </div>
@@ -4173,8 +4206,9 @@ function renderPaymentMethodAdminCard(methodEntry) {
 
 function renderFinanceRow(entry) {
   const finance = reservationFinancials(entry);
+  const isSelected = entry.id === state.selectedReservationId;
   return `
-    <tr>
+    <tr class="finance-table-row ${isSelected ? "selected" : ""}">
       <td>${escapeHtml(entry.id)}</td>
       <td>${escapeHtml(clientName(entry.clientId))}${entry.clientCorrectionNote ? `<br /><span class="status-pill warning">Dados a revisar</span>` : ""}</td>
       <td><strong>${escapeHtml(entry.kitName)}</strong><br /><span class="small-note">${escapeHtml(reservationThemeLabel(entry))}</span></td>
@@ -4187,58 +4221,138 @@ function renderFinanceRow(entry) {
       <td>${money(finance.replacementFee)}</td>
       <td>${money(finance.finalDue)}</td>
       <td>${escapeHtml(entry.paymentMethod || "Pendente")}</td>
-      <td><button class="secondary-button" data-open-finance="${escapeAttr(entry.id)}">Editar financeiro</button></td>
+      <td>
+        <div class="row-actions finance-row-actions">
+          <button class="secondary-button" data-open-finance="${escapeAttr(entry.id)}">${isSelected ? "Fechar" : "Abrir"}</button>
+          <button class="secondary-button" data-new-payment="${escapeAttr(entry.id)}">Novo pagamento</button>
+        </div>
+      </td>
     </tr>
+    ${
+      isSelected
+        ? `<tr class="finance-expanded-row"><td colspan="13"><div class="finance-expanded-detail">${renderFinanceDetail(entry)}</div></td></tr>`
+        : ""
+    }
   `;
 }
 
 function renderFinanceDetail(entry) {
   const finance = reservationFinancials(entry);
   return `
-    <div class="reservation-detail">
-      ${detail("Reserva", escapeHtml(entry.id))}
-      ${detail("Cliente", escapeHtml(clientName(entry.clientId)))}
-      ${detail("Kit/Tema", `${escapeHtml(entry.kitName)}<br /><span class="small-note">${escapeHtml(reservationThemeLabel(entry))}</span>`)}
-      ${detail("Evento", dateLabel(entry.eventDate))}
-      ${detail("Valor total", money(entry.total))}
-      <div class="admin-reservation-fields">
-        <div class="field">
-          <label for="financeDeposit">Sinal pago</label>
-          <input id="financeDeposit" type="number" min="0" step="0.01" value="${Number(entry.deposit || 0)}" />
+    <div class="reservation-detail finance-expanded-content">
+      ${renderReservationHeaderCard(entry, finance)}
+      ${renderReservationFinancialSummary(entry, finance)}
+      ${renderFinancePaymentsCard(entry)}
+      <section class="reservation-info-card finance-adjustments-card">
+        <div class="reservation-card-heading">
+          <div>
+            <span class="detail-eyebrow">Ajustes financeiros</span>
+            <h4>Pagamento, avarias e pendências</h4>
+          </div>
+          <span class="status-pill ${finance.finalDue > 0 ? "warning" : "signed"}">${finance.finalDue > 0 ? "Pendente" : "Quitado"}</span>
         </div>
-        <div class="field">
-          <label for="financeBalanceDue">Saldo restante</label>
-          <input id="financeBalanceDue" type="number" min="0" step="0.01" value="${finance.balanceDue}" />
+        <div class="admin-reservation-fields">
+          <div class="field">
+            <label for="financeDeposit">Sinal pago</label>
+            <input id="financeDeposit" type="number" min="0" step="0.01" value="${Number(entry.deposit || 0)}" />
+          </div>
+          <div class="field">
+            <label for="financeBalanceDue">Saldo restante</label>
+            <input id="financeBalanceDue" type="number" min="0" step="0.01" value="${finance.balanceDue}" />
+          </div>
+          <div class="field">
+            <label for="financeDamageFee">Avarias</label>
+            <input id="financeDamageFee" type="number" min="0" step="0.01" value="${finance.damageFee}" />
+          </div>
+          <div class="field">
+            <label for="financeReplacementFee">Reposição</label>
+            <input id="financeReplacementFee" type="number" min="0" step="0.01" value="${finance.replacementFee}" />
+          </div>
+          <div class="field">
+            <label for="financeDetailPaymentMethod">Forma de pagamento</label>
+            <select id="financeDetailPaymentMethod">
+              ${paymentMethodOptions(true).map((method) => optionMarkup(method, entry.paymentMethod)).join("")}
+            </select>
+          </div>
+          <div class="field">
+            <label for="financeDetailStatus">Status da reserva</label>
+            <select id="financeDetailStatus">
+              ${[...new Set([entry.status, ...reservationStatuses].filter(Boolean))].map((status) => optionMarkup(status, entry.status)).join("")}
+            </select>
+          </div>
+          <div class="field full-span">
+            <label for="financeNotes">Observações financeiras</label>
+            <textarea id="financeNotes">${escapeHtml(entry.financeNotes || "")}</textarea>
+          </div>
+          <div class="hint-box full-span">Total pendente atual: ${money(finance.finalDue)}.</div>
         </div>
-        <div class="field">
-          <label for="financeDamageFee">Avarias</label>
-          <input id="financeDamageFee" type="number" min="0" step="0.01" value="${finance.damageFee}" />
+        <div class="actions finance-expanded-actions">
+          <button class="primary-button" data-save-finance="${escapeAttr(entry.id)}" ${pendingDisabledAttr()}>${pendingLabel("save-reservation-finance", "Salvar financeiro", "Salvando financeiro...")}</button>
+          <button class="secondary-button" data-new-payment="${escapeAttr(entry.id)}">Novo pagamento</button>
+          <button class="secondary-button" data-open-reservation="${escapeAttr(entry.id)}" data-jump-reservations="true">Abrir reserva</button>
         </div>
-        <div class="field">
-          <label for="financeReplacementFee">Reposição</label>
-          <input id="financeReplacementFee" type="number" min="0" step="0.01" value="${finance.replacementFee}" />
+      </section>
+    </div>
+  `;
+}
+
+function renderFinancePaymentsCard(entry) {
+  const payments = entry.payments || [];
+  return `
+    <section class="reservation-info-card finance-payments-card">
+      <div class="reservation-card-heading">
+        <div>
+          <span class="detail-eyebrow">Pagamentos adicionais</span>
+          <h4>Histórico de valores recebidos</h4>
         </div>
-        <div class="field">
-          <label for="financeDetailPaymentMethod">Forma de pagamento</label>
-          <select id="financeDetailPaymentMethod">
-            ${paymentMethodOptions(true).map((method) => optionMarkup(method, entry.paymentMethod)).join("")}
-          </select>
-        </div>
-        <div class="field">
-          <label for="financeDetailStatus">Status da reserva</label>
-          <select id="financeDetailStatus">
-            ${[...new Set([entry.status, ...reservationStatuses].filter(Boolean))].map((status) => optionMarkup(status, entry.status)).join("")}
-          </select>
-        </div>
-        <div class="field full-span">
-          <label for="financeNotes">Observações financeiras</label>
-          <textarea id="financeNotes">${escapeHtml(entry.financeNotes || "")}</textarea>
-        </div>
-        <div class="hint-box full-span">Total pendente atual: ${money(finance.finalDue)}.</div>
+        <button class="secondary-button" data-new-payment="${escapeAttr(entry.id)}">Novo pagamento</button>
       </div>
-      <div class="actions">
-        <button class="primary-button" data-save-finance="${escapeAttr(entry.id)}" ${pendingDisabledAttr()}>${pendingLabel("save-reservation-finance", "Salvar financeiro", "Salvando financeiro...")}</button>
-        <button class="secondary-button" data-open-reservation="${escapeAttr(entry.id)}" data-jump-reservations="true">Abrir reserva</button>
+      ${
+        payments.length
+          ? `<div class="finance-payment-list">${payments.map(renderFinancePaymentRow).join("")}</div>`
+          : `<div class="empty-state">Nenhum pagamento adicional registrado para esta reserva.</div>`
+      }
+    </section>
+  `;
+}
+
+function renderFinancePaymentRow(payment) {
+  return `
+    <article class="finance-payment-row">
+      <div class="finance-payment-value">
+        <strong>${money(payment.amount)}</strong>
+        <span>${escapeHtml(payment.paymentMethod || "Forma não informada")}</span>
+      </div>
+      <div class="finance-payment-meta">
+        ${detail("Data do pagamento", dateLabel(payment.paidAt) || "Não informada")}
+        ${detail("Registrado por", escapeHtml(payment.createdByName || payment.createdByRole || "Admin"))}
+        ${detail("Criado em", dateTimeLabel(payment.createdAt) || "-")}
+      </div>
+      ${renderPaymentFilePreview(payment)}
+    </article>
+  `;
+}
+
+function renderPaymentFilePreview(payment) {
+  if (!payment.fileUrl && !payment.fileName) {
+    return `<div class="finance-payment-file"><span class="small-note">Sem comprovante anexado.</span></div>`;
+  }
+  const isImage = String(payment.fileType || "").startsWith("image/");
+  const preview = payment.fileUrl
+    ? isImage
+      ? `<img class="receipt-thumb" src="${safeImageSrc(payment.fileUrl)}" alt="Comprovante do pagamento" />`
+      : `<span class="receipt-file-icon">PDF</span>`
+    : `<span class="receipt-file-icon">Arquivo</span>`;
+  const action = payment.fileUrl
+    ? `<a class="secondary-button" href="${safeReceiptHref(payment.fileUrl)}" target="_blank" rel="noreferrer">Visualizar</a>`
+    : "";
+  return `
+    <div class="finance-payment-file">
+      ${preview}
+      <div>
+        <strong>${escapeHtml(payment.fileName || "Comprovante anexado")}</strong>
+        <p class="small-note">${escapeHtml(payment.fileType || "Tipo não informado")}</p>
+        ${action}
       </div>
     </div>
   `;
@@ -4246,35 +4360,28 @@ function renderFinanceDetail(entry) {
 
 function renderAdminReservations() {
   const reservationRows = getSortedReservations();
-  const selected = reservationRows.find((entry) => entry.id === state.selectedReservationId) || reservationRows[0];
   return `
     <section class="section-title">
       <div>
         <h2>Reservas e pagamentos</h2>
         <p>Confirme o sinal, gere contrato e acompanhe a assinatura digital.</p>
       </div>
-      <button class="danger-button" data-action="reset-demo">Restaurar dados da planilha</button>
     </section>
-    <div class="workspace-grid">
-      <section class="panel">
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Reserva</th><th>Cliente</th><th>Kit</th><th>Tema</th><th>Data</th><th>Status</th><th>Total</th><th></th></tr></thead>
-            <tbody>${reservationRows.map(renderAdminReservationRow).join("")}</tbody>
-          </table>
-        </div>
-      </section>
-      <aside class="panel">
-        <div class="panel-header"><h3>Detalhe da reserva</h3></div>
-        <div class="panel-body">${selected ? renderReservationDetail(selected) : `<div class="empty-state">Selecione uma reserva.</div>`}</div>
-      </aside>
-    </div>
+    <section class="panel reservations-table-panel">
+      <div class="table-wrap">
+        <table class="reservations-table">
+          <thead><tr><th>Reserva</th><th>Cliente</th><th>Kit</th><th>Tema</th><th>Data</th><th>Status</th><th>Total</th><th></th></tr></thead>
+          <tbody>${reservationRows.map(renderAdminReservationRow).join("")}</tbody>
+        </table>
+      </div>
+    </section>
   `;
 }
 
 function renderAdminReservationRow(entry) {
+  const isSelected = entry.id === state.selectedReservationId;
   return `
-    <tr>
+    <tr class="reservation-table-row ${isSelected ? "selected" : ""}">
       <td>${escapeHtml(entry.id)}</td>
       <td>${escapeHtml(clientName(entry.clientId))}${entry.clientCorrectionNote ? `<br /><span class="status-pill warning">Dados a revisar</span>` : ""}</td>
       <td>${escapeHtml(entry.kitName)}</td>
@@ -4282,36 +4389,147 @@ function renderAdminReservationRow(entry) {
       <td>${dateLabel(entry.eventDate)}</td>
       <td>${statusPill(entry.status)}</td>
       <td>${money(entry.total)}</td>
-      <td><button class="secondary-button" data-open-reservation="${escapeAttr(entry.id)}">Abrir</button></td>
+      <td><button class="secondary-button" data-open-reservation="${escapeAttr(entry.id)}">${isSelected ? "Fechar" : "Abrir"}</button></td>
     </tr>
+    ${
+      isSelected
+        ? `<tr class="reservation-expanded-row"><td colspan="8"><div class="reservation-expanded-detail">${renderReservationDetail(entry)}</div></td></tr>`
+        : ""
+    }
   `;
 }
 
 function renderReservationDetail(entry) {
+  const finance = reservationFinancials(entry);
   const confirmDepositDisabled = canConfirmDeposit(entry) ? pendingDisabledAttr() : 'disabled title="Disponivel somente quando a reserva estiver aguardando confirmacao de sinal."';
   return `
     <div class="reservation-detail">
-      ${detail("Reserva", escapeHtml(entry.id))}
-      ${detail("Cliente", escapeHtml(clientName(entry.clientId)))}
+      ${renderReservationHeaderCard(entry, finance)}
       ${renderClientCorrectionAlert(entry)}
-      ${detail("Kit", escapeHtml(entry.kitName))}
-      ${detail("Tema escolhido", escapeHtml(reservationThemeLabel(entry)))}
-      ${detail("Evento", dateLabel(entry.eventDate))}
-      ${detail("Status", statusPill(entry.status))}
-      ${detail("Entrega/Retirada", entry.delivery ? "Ateliê entrega" : "Cliente retira")}
-      ${detail("Data entrega/coleta", dateLabel(entry.deliveryDate))}
-      ${detail("Montagem", entry.assembly ? "Com montagem" : "Sem montagem")}
-      ${detail("Devolução/Busca", entry.returnService ? "Ateliê retira" : "Cliente devolve")}
-      ${detail("Valor do kit fechado", money(entry.kitValue))}
-      ${detail("Adicionais", money(entry.additionalValue || 0))}
-      ${detail("Sinal solicitado", money(entry.signalDue || entry.total * 0.5))}
-      ${detail("Sinal", money(entry.deposit))}
-      ${detail("Desconto", money(entry.discount))}
-      ${detail("Serviços", money(entry.serviceFee))}
-      ${detail("Total", money(entry.total))}
+      ${renderReservationFinancialSummary(entry, finance)}
+      ${renderReservationActionPanel(entry, confirmDepositDisabled)}
+      ${renderReservationEventBlock(entry)}
+      ${renderReservationItemsCard(entry)}
       ${renderReceiptAdminBlock(entry)}
-      ${renderReservationItemSections(entry)}
-      ${renderAdminOperationalFields(entry)}
+      ${renderReservationClosingBlock(entry, finance)}
+      ${renderReservationContractBlock(entry)}
+    </div>
+  `;
+}
+
+function renderReservationHeaderCard(entry, finance) {
+  const pendingClass = finance.finalDue > 0 ? "warning" : "signed";
+  const pendingText = finance.finalDue > 0 ? `Pendência: ${money(finance.finalDue)}` : "Sem pendência";
+  return `
+    <section class="reservation-hero-card">
+      <div class="reservation-hero-main">
+        <span class="detail-eyebrow">Código da reserva</span>
+        <h3>${escapeHtml(entry.id)}</h3>
+        <strong>${escapeHtml(clientName(entry.clientId))}</strong>
+        <div class="reservation-hero-meta">
+          ${statusPill(entry.status)}
+          <span class="status-pill ${pendingClass}">${escapeHtml(pendingText)}</span>
+        </div>
+      </div>
+      <div class="reservation-hero-total">
+        <span>Total</span>
+        <strong>${money(entry.total)}</strong>
+        <small>Evento: ${dateLabel(entry.eventDate)}</small>
+      </div>
+    </section>
+  `;
+}
+
+function renderReservationEventBlock(entry) {
+  return `
+    <section class="reservation-info-card">
+      <div class="reservation-card-heading">
+        <div>
+          <span class="detail-eyebrow">Evento e logística</span>
+          <h4>Dados principais</h4>
+        </div>
+      </div>
+      <div class="reservation-info-grid">
+        ${detail("Kit", escapeHtml(entry.kitName))}
+        ${detail("Tema escolhido", escapeHtml(reservationThemeLabel(entry)))}
+        ${detail("Data do evento", dateLabel(entry.eventDate))}
+        ${detail("Entrega/Retirada", entry.delivery ? "Ateliê entrega" : "Cliente retira")}
+        ${detail("Montagem", entry.assembly ? "Com montagem" : "Sem montagem")}
+        ${detail("Devolução/Busca", entry.returnService ? "Ateliê retira" : "Cliente devolve")}
+        <div class="field full-span compact-field">
+          <label for="adminDeliveryDate">Data entrega/coleta</label>
+          <input id="adminDeliveryDate" type="date" value="${escapeHtml(entry.deliveryDate || "")}" />
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderReservationFinancialSummary(entry, finance = reservationFinancials(entry)) {
+  const signalDue = financialNumber(entry.signalDue, financialNumber(entry.total) * 0.5);
+  const dueClass = finance.finalDue > 0 ? "is-pending" : "is-paid";
+  return `
+    <section class="reservation-info-card reservation-summary-card">
+      <div class="reservation-card-heading">
+        <div>
+          <span class="detail-eyebrow">Resumo financeiro</span>
+          <h4>Valores da reserva</h4>
+        </div>
+      </div>
+      <div class="finance-mini-grid">
+        ${financeMiniCard("Valor do kit", money(entry.kitValue))}
+        ${financeMiniCard("Adicionais", money(entry.additionalValue || 0))}
+        ${financeMiniCard("Serviços", money(entry.serviceFee))}
+        ${financeMiniCard("Desconto", money(entry.discount))}
+        ${financeMiniCard("Sinal solicitado", money(signalDue))}
+        ${financeMiniCard("Sinal pago", money(entry.deposit))}
+        ${financeMiniCard("Pagamentos adicionais", money(finance.additionalPayments), finance.additionalPayments > 0 ? "is-paid" : "")}
+        ${financeMiniCard("Total", money(entry.total), "is-total")}
+        ${financeMiniCard("Restante pendente", money(finance.finalDue), dueClass)}
+      </div>
+      ${renderAdditionalPaymentsCompact(entry)}
+    </section>
+  `;
+}
+
+function financeMiniCard(label, value, className = "") {
+  return `
+    <div class="finance-mini-card ${className}">
+      <span>${label}</span>
+      <strong>${value}</strong>
+    </div>
+  `;
+}
+
+function renderAdditionalPaymentsCompact(entry) {
+  const payments = entry.payments || [];
+  if (!payments.length) return `<div class="small-note payment-compact-empty">Nenhum pagamento adicional registrado.</div>`;
+  return `
+    <div class="payment-compact-list">
+      <span class="detail-eyebrow">Pagamentos adicionais</span>
+      ${payments.map((payment) => `
+        <div class="payment-compact-row">
+          <span>${escapeHtml(paymentDescription(payment))}</span>
+          <strong>${money(payment.amount)}</strong>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function paymentDescription(payment) {
+  return `${payment.paymentMethod || "Pagamento"}${payment.paidAt ? ` · ${dateLabel(payment.paidAt)}` : ""}`;
+}
+
+function renderReservationActionPanel(entry, confirmDepositDisabled) {
+  return `
+    <section class="reservation-info-card reservation-actions-panel">
+      <div class="reservation-card-heading">
+        <div>
+          <span class="detail-eyebrow">Ações principais</span>
+          <h4>Próximos passos</h4>
+        </div>
+      </div>
       <div class="field">
         <label for="adminDeposit">Sinal pago</label>
         <input id="adminDeposit" type="number" min="0" step="1" value="${entry.deposit || entry.signalDue || entry.total * 0.5}" />
@@ -4328,15 +4546,92 @@ function renderReservationDetail(entry) {
           ${[...new Set([entry.status, ...reservationStatuses].filter(Boolean))].map((status) => optionMarkup(status, entry.status)).join("")}
         </select>
       </div>
-      <div class="actions">
+      <div class="reservation-action-stack">
         <button class="primary-button" data-confirm-deposit="${escapeAttr(entry.id)}" ${confirmDepositDisabled}>${pendingLabel("confirm-deposit", "Confirmar sinal e reserva", "Confirmando...")}</button>
-        <button class="secondary-button" data-save-reservation-status="${escapeAttr(entry.id)}" ${pendingDisabledAttr()}>${pendingLabel("save-status", "Salvar status", "Salvando status...")}</button>
         <button class="secondary-button" data-generate-contract="${escapeAttr(entry.id)}" ${entry.deposit <= 0 && !entry.contractGeneratedAt ? "disabled" : pendingDisabledAttr()}>${pendingLabel("generate-contract", "Gerar contrato", "Gerando contrato...")}</button>
-        ${entry.contractGeneratedAt ? `<button class="secondary-button" data-open-contract="${escapeAttr(entry.id)}">Abrir contrato</button>` : ""}
-        <button class="danger-button" data-cancel-reservation="${escapeAttr(entry.id)}" ${pendingDisabledAttr()}>${pendingLabel("cancel-reservation", "Cancelar", "Cancelando...")}</button>
+        ${entry.contractGeneratedAt ? `<button class="secondary-button" data-open-contract="${escapeAttr(entry.id)}">Ver contrato</button>` : ""}
+        <button class="secondary-button" data-new-payment="${escapeAttr(entry.id)}">Novo pagamento</button>
+        <button class="secondary-button" data-save-reservation-status="${escapeAttr(entry.id)}" ${pendingDisabledAttr()}>${pendingLabel("save-status", "Salvar financeiro", "Salvando...")}</button>
+        <button class="danger-button" data-cancel-reservation="${escapeAttr(entry.id)}" ${pendingDisabledAttr()}>${pendingLabel("cancel-reservation", "Cancelar reserva", "Cancelando...")}</button>
       </div>
-      ${entry.signature ? `<div><strong>Assinatura</strong><br />${renderSignatureEvidence(entry)}</div>` : ""}
-    </div>
+    </section>
+  `;
+}
+
+function renderReservationItemsCard(entry) {
+  const { included, additional } = splitReservationItems(entry);
+  const kitText = store.kits.find((kitEntry) => kitEntry.id === entry.kitId)?.itemsText || "";
+  const kitTextRows = kitText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const includedCount = kitTextRows.length || included.length;
+  const addonRows = (entry.addonIds || []).map((id) => store.addons.find((addonEntry) => addonEntry.id === id)).filter(Boolean);
+  const additionalCount = addonRows.length || additional.length;
+  const addonList = addonRows.length
+    ? addonRows.map((addonEntry) => `<li>${escapeHtml(addonEntry.name)} · ${money(addonEntry.price)}</li>`).join("")
+    : additional.map((entryItem) => `<li>${escapeHtml(formatItemLine(entryItem))}</li>`).join("");
+
+  return `
+    <section class="reservation-info-card">
+      <div class="reservation-card-heading">
+        <div>
+          <span class="detail-eyebrow">Itens da reserva</span>
+          <h4>Kit e adicionais</h4>
+        </div>
+        <span class="small-note">${includedCount} item(ns) no kit · ${additionalCount} adicional(is)</span>
+      </div>
+      <details class="reservation-accordion">
+        <summary><span>Itens inclusos no kit</span><strong>${includedCount} item(ns)</strong></summary>
+        ${
+          kitText
+            ? `<p class="muted">${escapeHtml(kitText).replaceAll("\n", "<br />")}</p>`
+            : `<ul class="item-list">${included.map((entryItem) => `<li>${escapeHtml(formatItemLine(entryItem))}</li>`).join("")}</ul>`
+        }
+      </details>
+      <details class="reservation-accordion">
+        <summary><span>Adicionais selecionados</span><strong>${additionalCount} adicional(is)</strong></summary>
+        ${additionalCount ? `<ul class="item-list">${addonList}</ul>` : `<div class="small-note">Sem adicionais nessa reserva.</div>`}
+      </details>
+    </section>
+  `;
+}
+
+function renderReservationClosingBlock(entry, finance = reservationFinancials(entry)) {
+  return `
+    <details class="reservation-info-card reservation-closing-card">
+      <summary class="reservation-card-heading">
+        <div>
+          <span class="detail-eyebrow">Fechamento financeiro</span>
+          <h4>Pagamento, avarias e reposição</h4>
+        </div>
+        <span class="status-pill ${finance.finalDue > 0 ? "warning" : "signed"}">${finance.finalDue > 0 ? "Pendente" : "Quitado"}</span>
+      </summary>
+      ${renderAdminOperationalFields(entry)}
+    </details>
+  `;
+}
+
+function renderReservationContractBlock(entry) {
+  const signature = entry.signature;
+  const signatureType = signature?.type === "physical" ? "Físico anexado" : signature ? "Digital" : "Pendente";
+  const signatureStatus = signature ? "Contrato assinado" : entry.contractGeneratedAt ? "Aguardando assinatura" : "Contrato ainda não gerado";
+  return `
+    <section class="reservation-info-card">
+      <div class="reservation-card-heading">
+        <div>
+          <span class="detail-eyebrow">Contrato e assinatura</span>
+          <h4>${signatureStatus}</h4>
+        </div>
+        <span class="status-pill ${signature ? "signed" : "pending"}">${escapeHtml(signatureType)}</span>
+      </div>
+      <div class="reservation-info-grid">
+        ${detail("Gerado em", dateTimeLabel(entry.contractGeneratedAt) || "Não gerado")}
+        ${detail("Status da assinatura", signature ? "Assinado" : "Pendente")}
+        ${detail("Tipo de assinatura", signatureType)}
+        ${detail("Assinante", escapeHtml(signature?.signer || "Aguardando assinatura"))}
+        ${detail("Assinado em", dateTimeLabel(signature?.signedAt) || "Aguardando assinatura")}
+      </div>
+      ${signature ? renderSignatureEvidence(entry) : ""}
+      ${entry.contractGeneratedAt ? renderPhysicalContractUpload(entry) : `<div class="hint-box">Gere o contrato para liberar assinatura digital ou anexo físico.</div>`}
+    </section>
   `;
 }
 
@@ -4360,10 +4655,6 @@ function renderAdminOperationalFields(entry) {
   return `
     <div class="admin-reservation-fields">
       <div class="field">
-        <label for="adminDeliveryDate">Data entrega/coleta</label>
-        <input id="adminDeliveryDate" type="date" value="${escapeHtml(entry.deliveryDate || "")}" />
-      </div>
-      <div class="field">
         <label for="adminBalanceDue">Restante do pagamento</label>
         <input id="adminBalanceDue" type="number" min="0" step="0.01" value="${finance.balanceDue}" />
       </div>
@@ -4385,17 +4676,44 @@ function renderAdminOperationalFields(entry) {
 }
 
 function renderReceiptAdminBlock(entry) {
-  if (!entry.receiptName) return detail("Comprovante", "Não anexado");
+  if (!entry.receiptName) {
+    return `
+      <section class="reservation-info-card">
+        <div class="reservation-card-heading">
+          <div>
+          <span class="detail-eyebrow">Comprovante de pagamento</span>
+            <h4>Não anexado</h4>
+          </div>
+        </div>
+        <div class="small-note">Nenhum comprovante foi anexado para esta reserva.</div>
+      </section>
+    `;
+  }
   const preview = entry.receiptData
     ? entry.receiptType?.startsWith("image/")
-      ? `<img class="receipt-preview" src="${safeImageSrc(entry.receiptData)}" alt="Comprovante anexado" />`
-      : `<a class="secondary-button" href="${safeReceiptHref(entry.receiptData)}" target="_blank" rel="noreferrer">Abrir comprovante</a>`
+      ? `<img class="receipt-thumb" src="${safeImageSrc(entry.receiptData)}" alt="Comprovante anexado" />`
+      : `<span class="receipt-file-icon">PDF</span>`
+    : `<span class="receipt-file-icon">Arquivo</span>`;
+  const action = entry.receiptData
+    ? `<button class="secondary-button" data-open-receipt="${escapeAttr(entry.id)}">Visualizar comprovante</button>`
     : `<span class="small-note">Arquivo antigo sem pré-visualização salva.</span>`;
   return `
-    <div class="receipt-box">
-      <div class="detail-row"><span>Comprovante</span><strong>${escapeHtml(entry.receiptName)}</strong></div>
-      ${preview}
-    </div>
+    <section class="reservation-info-card receipt-admin-card">
+      <div class="reservation-card-heading">
+        <div>
+          <span class="detail-eyebrow">Comprovante de pagamento</span>
+          <h4>${escapeHtml(entry.receiptName)}</h4>
+        </div>
+      </div>
+      <div class="receipt-compact">
+        ${preview}
+        <div>
+          <strong>${escapeHtml(entry.receiptName)}</strong>
+          <p class="small-note">${escapeHtml(entry.receiptType || "Tipo não informado")}</p>
+          ${action}
+        </div>
+      </div>
+    </section>
   `;
 }
 
@@ -4612,12 +4930,16 @@ function renderAdminKitAddons() {
         <h2>Kit e Adicionais</h2>
         <p>Cadastre o que o cliente vê na jornada de reserva e ajuste os valores dos serviços opcionais.</p>
       </div>
+      <div class="section-actions kit-addon-shortcuts">
+        <a class="secondary-button" href="#admin-kits">Ir para Kit</a>
+        <a class="secondary-button" href="#admin-addons">Ir para Adicionais</a>
+      </div>
     </section>
-    <section class="panel">
+    <section class="panel service-fees-panel">
       <div class="panel-header"><h3>Valores de serviços</h3></div>
       <div class="panel-body">
-        <form id="serviceFeesForm" novalidate>
-          <div class="form-grid">
+        <form id="serviceFeesForm" class="service-fees-form" novalidate>
+          <div class="service-fees-fields">
             ${serviceField("Entrega", "delivery", store.serviceFees.delivery)}
             ${serviceField("Montagem", "assembly", store.serviceFees.assembly)}
             ${serviceField("Devolução", "returnService", store.serviceFees.returnService)}
@@ -4628,8 +4950,8 @@ function renderAdminKitAddons() {
         </form>
       </div>
     </section>
-    <div class="workspace-grid" style="margin-top: 18px">
-      <section class="panel">
+    <div class="kit-addon-stack">
+      <section class="panel" id="admin-kits">
         <div class="panel-header">
           <h3>Kits</h3>
           <button class="primary-button" data-action="new-kit">Criar kit</button>
@@ -4641,7 +4963,7 @@ function renderAdminKitAddons() {
           </table>
         </div>
       </section>
-      <section class="panel">
+      <section class="panel" id="admin-addons">
         <div class="panel-header">
           <h3>Adicionais</h3>
           <button class="primary-button" data-action="new-addon">Criar adicional</button>
@@ -4835,7 +5157,7 @@ function renderSignatureEvidence(entry) {
       : "";
     return `
       <div class="physical-contract-card">
-        <p><strong>Contrato fisico anexado:</strong> ${escapeHtml(signature.physicalFileName || "arquivo assinado")} em ${dateTimeLabel(signature.signedAt)}</p>
+        <p><strong>Contrato físico anexado:</strong> ${escapeHtml(signature.physicalFileName || "arquivo assinado")} em ${dateTimeLabel(signature.signedAt)}</p>
         ${fileLink}
       </div>
     `;
@@ -4846,7 +5168,7 @@ function renderSignatureEvidence(entry) {
 
 function renderPhysicalContractUpload(reservation) {
   if (reservation.signature?.type === "physical") {
-    return `<div class="hint-box physical-contract-note">Contrato fisico anexado e registrado como assinatura da reserva.</div>`;
+    return `<div class="hint-box physical-contract-note">Contrato físico anexado e registrado como assinatura da reserva.</div>`;
   }
 
   if (reservation.signature) {
@@ -4871,6 +5193,9 @@ function renderModal() {
   if (state.modal.type === "inventory") return renderInventoryModal();
   if (state.modal.type === "kit-addon") return renderKitAddonModal();
   if (state.modal.type === "theme") return renderThemeModal();
+  if (state.modal.type === "receipt") return renderReceiptModal();
+  if (state.modal.type === "payment") return renderPaymentModal();
+  if (state.modal.type === "payment-method") return renderPaymentMethodModal();
   if (state.modal.type !== "contract") return "";
 
   const entry = store.reservations.find((row) => row.id === state.modal.id);
@@ -4906,6 +5231,150 @@ function renderModal() {
             <button class="secondary-button" data-action="print-contract">Imprimir contrato</button>
           </div>
         </div>
+      </section>
+    </div>
+  `;
+}
+
+function renderReceiptModal() {
+  const entry = store.reservations.find((row) => row.id === state.modal.id);
+  if (!entry || !entry.receiptData) return "";
+  const href = safeReceiptHref(entry.receiptData);
+  const preview = entry.receiptType?.startsWith("image/")
+    ? `<img class="receipt-modal-preview" src="${safeImageSrc(entry.receiptData)}" alt="Comprovante anexado" />`
+    : `<iframe class="receipt-pdf-preview" src="${href}" title="Comprovante anexado"></iframe>`;
+
+  return `
+    <div class="modal-backdrop">
+      <section class="modal receipt-modal">
+        <div class="modal-title">
+          <div>
+            <h2>Comprovante ${escapeHtml(entry.id)}</h2>
+            <p>${escapeHtml(entry.receiptName || "Arquivo anexado")} · ${escapeHtml(clientName(entry.clientId))}</p>
+          </div>
+          <button class="ghost-button" data-action="close-modal">Fechar</button>
+        </div>
+        <div class="modal-content">
+          ${preview}
+          <div class="actions">
+            <a class="secondary-button" href="${href}" target="_blank" rel="noreferrer">Abrir em nova aba</a>
+          </div>
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+function renderPaymentModal() {
+  const entry = store.reservations.find((row) => row.id === state.modal.id);
+  if (!entry) return "";
+  const finance = reservationFinancials(entry);
+  const today = new Date().toISOString().slice(0, 10);
+  return `
+    <div class="modal-backdrop">
+      <section class="modal payment-modal">
+        <div class="modal-title">
+          <div>
+            <h2>Novo pagamento</h2>
+            <p>${escapeHtml(entry.id)} · ${escapeHtml(clientName(entry.clientId))} · pendente ${money(finance.finalDue)}</p>
+          </div>
+          <button class="ghost-button" data-action="close-modal">Fechar</button>
+        </div>
+        <form class="modal-content" id="reservationPaymentForm" data-reservation-id="${escapeAttr(entry.id)}" novalidate>
+          <div class="payment-modal-summary">
+            <div><span>Total</span><strong>${money(entry.total)}</strong></div>
+            <div><span>Sinal pago</span><strong>${money(entry.deposit)}</strong></div>
+            <div><span>Pagamentos adicionais</span><strong>${money(finance.additionalPayments)}</strong></div>
+            <div><span>Restante</span><strong>${money(finance.finalDue)}</strong></div>
+          </div>
+          <div class="form-grid">
+            <div class="field">
+              <label for="newPaymentAmount">Valor pago</label>
+              <input id="newPaymentAmount" name="amount" type="number" min="0.01" step="0.01" value="${finance.finalDue > 0 ? finance.finalDue : ""}" required />
+            </div>
+            <div class="field">
+              <label for="newPaymentMethod">Forma de pagamento</label>
+              <select id="newPaymentMethod" name="paymentMethod" required>
+                ${paymentMethodOptions(true).map((method) => optionMarkup(method, entry.paymentMethod || state.draft.paymentMethod)).join("")}
+              </select>
+            </div>
+            <div class="field">
+              <label for="newPaymentDate">Data do pagamento</label>
+              <input id="newPaymentDate" name="paidAt" type="date" value="${today}" required />
+            </div>
+            <div class="field">
+              <label for="newPaymentReceipt">Comprovante/anexo</label>
+              <input id="newPaymentReceipt" name="receipt" type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" />
+              <div class="small-note">Aceita PDF, JPG, JPEG ou PNG. Limite de 8 MB.</div>
+            </div>
+          </div>
+          <div class="actions">
+            <button class="primary-button" type="submit" ${pendingDisabledAttr()}>${pendingLabel("save-payment", "Registrar pagamento", "Registrando...")}</button>
+            <button class="secondary-button" type="button" data-action="close-modal">Cancelar</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  `;
+}
+
+function renderPaymentMethodModal() {
+  const methodEntry = state.modal.id ? store.paymentMethods.find((entry) => entry.id === state.modal.id) : null;
+  const model = methodEntry || createEmptyPaymentMethod();
+  const isEditing = Boolean(methodEntry?.id);
+  const title = isEditing ? "Editar forma de pagamento" : "Nova forma de pagamento";
+  return `
+    <div class="modal-backdrop">
+      <section class="modal payment-method-modal">
+        <div class="modal-title">
+          <div>
+            <h2>${title}</h2>
+            <p>Atualize os dados exibidos ao cliente sem alterar a lista principal da aba Financeiro.</p>
+          </div>
+          <button class="ghost-button" data-action="close-modal">Fechar</button>
+        </div>
+        <form class="modal-content" id="paymentMethodForm" data-id="${escapeAttr(model.id || "")}" novalidate>
+          <div class="form-grid">
+            <div class="field">
+              <label for="paymentName">Nome</label>
+              <input id="paymentName" name="name" type="text" value="${escapeHtml(model.name || "")}" placeholder="PIX, Cartao, Transferencia" required />
+            </div>
+            <div class="field">
+              <label for="paymentType">Tipo</label>
+              <select id="paymentType" name="type">
+                ${paymentMethodTypeOptions().map(([value, label]) => optionMarkup(value, model.type, label)).join("")}
+              </select>
+            </div>
+            <div class="field">
+              <label for="paymentPixKey">Chave PIX</label>
+              <input id="paymentPixKey" name="pixKey" type="text" value="${escapeHtml(model.pixKey || "")}" />
+            </div>
+            <div class="field">
+              <label for="paymentPixName">Recebedor PIX</label>
+              <input id="paymentPixName" name="pixName" type="text" value="${escapeHtml(model.pixName || "")}" />
+            </div>
+            <div class="field">
+              <label for="paymentPixCity">Cidade PIX</label>
+              <input id="paymentPixCity" name="pixCity" type="text" value="${escapeHtml(model.pixCity || "")}" />
+            </div>
+            <div class="field">
+              <label for="paymentBank">Banco/dados auxiliares</label>
+              <input id="paymentBank" name="bank" type="text" value="${escapeHtml(model.bank || "")}" />
+            </div>
+            <div class="field full-span">
+              <label for="paymentInstructions">Orientacoes para o cliente</label>
+              <textarea id="paymentInstructions" name="instructions">${escapeHtml(model.instructions || "")}</textarea>
+            </div>
+            <label class="choice-option full-span">
+              <input type="checkbox" name="enabled" ${model.enabled !== false ? "checked" : ""} />
+              Forma ativa para clientes
+            </label>
+          </div>
+          <div class="actions">
+            <button class="primary-button" type="submit" ${pendingDisabledAttr()}>${pendingLabel("save-payment-method", isEditing ? "Salvar forma" : "Criar forma", "Salvando...")}</button>
+            <button class="secondary-button" type="button" data-action="close-modal">Cancelar</button>
+          </div>
+        </form>
       </section>
     </div>
   `;
@@ -5307,6 +5776,7 @@ function reservationFinancials(entry) {
   const balanceDue = hasBalanceDue ? financialNumber(entry.balanceDue) : defaultBalance;
   const damageFee = financialNumber(entry.damageFee);
   const replacementFee = financialNumber(entry.replacementFee);
+  const additionalPayments = reservationAdditionalPaymentsTotal(entry);
   const legacyExtraCharges = entry.extraCharges !== undefined && entry.extraCharges !== null && entry.extraCharges !== ""
     ? financialNumber(entry.extraCharges)
     : 0;
@@ -5316,8 +5786,13 @@ function reservationFinancials(entry) {
     damageFee,
     replacementFee,
     extraCharges,
-    finalDue: Math.max(0, balanceDue + extraCharges),
+    additionalPayments,
+    finalDue: Math.max(0, balanceDue + extraCharges - additionalPayments),
   };
+}
+
+function reservationAdditionalPaymentsTotal(entry) {
+  return (entry?.payments || []).reduce((sum, payment) => sum + financialNumber(payment.amount), 0);
 }
 
 function reservationNumber(entry) {
@@ -5347,13 +5822,14 @@ function financialSummary(rows = financialReservations()) {
       const finance = reservationFinancials(entry);
       summary.revenue += financialNumber(entry.total);
       summary.deposits += financialNumber(entry.deposit);
+      summary.totalReceived += financialNumber(entry.deposit) + reservationAdditionalPaymentsTotal(entry);
       summary.balanceDue += finance.balanceDue;
       summary.extraCharges += finance.extraCharges;
       summary.finalDue += finance.finalDue;
       if (finance.finalDue > 0 || entry.status === "Pagamento pendente") summary.pendingReservations += 1;
       return summary;
     },
-    { revenue: 0, deposits: 0, balanceDue: 0, extraCharges: 0, finalDue: 0, pendingReservations: 0 },
+    { totalReceived: 0, revenue: 0, deposits: 0, balanceDue: 0, extraCharges: 0, finalDue: 0, pendingReservations: 0 },
   );
 }
 
@@ -5402,7 +5878,7 @@ function completeLogin(user) {
   if (user.role === "client") {
     initializeClientAfterLogin();
   } else {
-    state.selectedReservationId = getSortedReservations()[0]?.id || null;
+    state.selectedReservationId = null;
     state.newQuoteMode = false;
     state.adminQuoteClientId = "";
     state.adminQuoteSearch = "";
@@ -5822,6 +6298,58 @@ async function uploadPhysicalContract(id, fileInput) {
   render();
 }
 
+async function submitReservationPayment(form) {
+  if (state.user?.role !== "admin") {
+    const error = new Error("Acesso restrito.");
+    error.userMessage = "Apenas o Admin pode registrar pagamentos adicionais.";
+    throw error;
+  }
+
+  const id = form.dataset.reservationId;
+  const entry = store.reservations.find((row) => row.id === id);
+  if (!entry) {
+    const error = new Error("Reserva nao encontrada.");
+    error.userMessage = "Reserva nao encontrada para registrar o pagamento.";
+    throw error;
+  }
+
+  const formData = new FormData(form);
+  const amount = financialNumber(formData.get("amount"));
+  const paymentMethod = String(formData.get("paymentMethod") || "").trim();
+  const paidAt = String(formData.get("paidAt") || "").trim();
+
+  if (amount <= 0) {
+    const error = new Error("Valor invalido.");
+    error.userMessage = "Informe um valor pago maior que zero.";
+    throw error;
+  }
+
+  if (!paymentMethod) {
+    const error = new Error("Forma de pagamento ausente.");
+    error.userMessage = "Selecione a forma de pagamento.";
+    throw error;
+  }
+
+  if (!paidAt) {
+    const error = new Error("Data do pagamento ausente.");
+    error.userMessage = "Informe a data do pagamento.";
+    throw error;
+  }
+
+  const receipt = await readPaymentReceiptFile(form.querySelector('[name="receipt"]')?.files?.[0]);
+  await createReservationPaymentWithApi(id, {
+    amount,
+    paymentMethod,
+    paidAt,
+    fileName: receipt.name,
+    fileType: receipt.type,
+    fileData: receipt.data,
+  });
+
+  state.selectedReservationId = id;
+  state.modal = null;
+}
+
 function attachSignaturePad() {
   const canvas = document.querySelector("#signaturePad");
   if (!canvas) return;
@@ -5887,11 +6415,91 @@ function drawAllKitArt() {
 function drawHeroArt() {
   const canvas = document.querySelector("#heroCanvas");
   if (!canvas) return;
-  drawPartyScene(canvas, ["#F7F2EC", "#C97B8B", "#A8B8A1"], true);
+  drawLoginHeroArt(canvas);
 }
 
 function drawKitArt(canvas, kitData) {
   drawPartyScene(canvas, kitData.colors || ["#F7F2EC", "#C97B8B", "#A8B8A1"], false);
+}
+
+function drawLoginHeroArt(canvas) {
+  const ctx = canvas.getContext("2d");
+  const width = canvas.width;
+  const height = canvas.height;
+  ctx.clearRect(0, 0, width, height);
+
+  const backdrop = ctx.createLinearGradient(0, 0, width, height);
+  backdrop.addColorStop(0, "#f7dcc5");
+  backdrop.addColorStop(0.46, "#d8a977");
+  backdrop.addColorStop(1, "#8b5f45");
+  ctx.fillStyle = backdrop;
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.fillStyle = "rgba(255,253,249,.42)";
+  roundRect(ctx, width * 0.34, height * 0.08, width * 0.36, height * 0.72, 34);
+  ctx.fill();
+
+  ctx.strokeStyle = "rgba(255,253,249,.52)";
+  ctx.lineWidth = 10;
+  ctx.beginPath();
+  ctx.arc(width * 0.28, height * 0.5, height * 0.35, Math.PI * 1.05, Math.PI * 1.92);
+  ctx.stroke();
+
+  [
+    [0.08, 0.34, 0.08, "#f4d7c7"],
+    [0.14, 0.25, 0.065, "#efd4bd"],
+    [0.2, 0.38, 0.075, "#f9e4d4"],
+    [0.15, 0.48, 0.055, "#d8be96"],
+    [0.25, 0.28, 0.055, "#e8b9a3"],
+    [0.28, 0.42, 0.07, "#f7dfcb"],
+  ].forEach(([x, y, radius, color]) => {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.ellipse(width * x, height * y, width * radius, height * radius * 1.18, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  ctx.fillStyle = "rgba(255,253,249,.92)";
+  roundRect(ctx, width * 0.42, height * 0.58, width * 0.18, height * 0.07, 10);
+  roundRect(ctx, width * 0.45, height * 0.49, width * 0.12, height * 0.09, 12);
+  roundRect(ctx, width * 0.47, height * 0.41, width * 0.08, height * 0.08, 12);
+  ctx.fill();
+
+  ctx.fillStyle = "rgba(216,190,150,.96)";
+  roundRect(ctx, width * 0.34, height * 0.66, width * 0.34, height * 0.045, 14);
+  ctx.fill();
+  ctx.fillStyle = "rgba(95,63,44,.5)";
+  roundRect(ctx, width * 0.39, height * 0.705, width * 0.035, height * 0.17, 8);
+  roundRect(ctx, width * 0.59, height * 0.705, width * 0.035, height * 0.17, 8);
+  ctx.fill();
+
+  ctx.fillStyle = "rgba(255,244,225,.92)";
+  for (let i = 0; i < 10; i += 1) {
+    const x = width * (0.72 + Math.cos(i) * 0.08);
+    const y = height * (0.38 + Math.sin(i * 1.8) * 0.12);
+    ctx.beginPath();
+    ctx.ellipse(x, y, width * 0.028, height * 0.045, i, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.fillStyle = "rgba(201,123,139,.88)";
+  for (let i = 0; i < 9; i += 1) {
+    ctx.beginPath();
+    ctx.arc(width * (0.74 + Math.cos(i * 1.4) * 0.09), height * (0.43 + Math.sin(i) * 0.13), width * 0.022, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.fillStyle = "rgba(255,253,249,.92)";
+  ctx.font = `${Math.round(width * 0.055)}px "Cormorant Garamond", Georgia, serif`;
+  ctx.textAlign = "center";
+  ctx.fillText("Celebre", width * 0.52, height * 0.28);
+  ctx.fillText("cada", width * 0.52, height * 0.38);
+  ctx.fillText("momento", width * 0.52, height * 0.48);
+
+  const glow = ctx.createRadialGradient(width * 0.56, height * 0.68, 0, width * 0.56, height * 0.68, width * 0.42);
+  glow.addColorStop(0, "rgba(255,246,223,.45)");
+  glow.addColorStop(1, "rgba(255,246,223,0)");
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, width, height);
 }
 
 function drawPartyScene(canvas, colors, large) {
@@ -6120,6 +6728,11 @@ document.addEventListener("submit", async (event) => {
     await runAction("save-payment-method", () => savePaymentMethodFromForm(event.target), isEdit ? "Forma de pagamento atualizada." : "Forma de pagamento criada.");
     return;
   }
+  if (event.target.id === "reservationPaymentForm") {
+    event.preventDefault();
+    await runAction("save-payment", () => submitReservationPayment(event.target), "Pagamento registrado com sucesso.");
+    return;
+  }
   if (event.target.id === "serviceFeesForm") {
     event.preventDefault();
     await runAction("save-service-fees", () => saveServiceFeesFromForm(event.target), "Valores de entrega, montagem e devolução salvos.");
@@ -6146,6 +6759,15 @@ document.addEventListener("click", async (event) => {
     clearFormState();
     state.authView = "login";
     render();
+    return;
+  }
+  if (target.dataset.togglePassword) {
+    const input = document.getElementById(target.dataset.togglePassword);
+    if (!input) return;
+    const shouldShow = input.type === "password";
+    input.type = shouldShow ? "text" : "password";
+    target.setAttribute("aria-label", shouldShow ? "Ocultar senha" : "Mostrar senha");
+    target.classList.toggle("active", shouldShow);
     return;
   }
   if (target.dataset.action === "reset-draft") {
@@ -6183,14 +6805,6 @@ document.addEventListener("click", async (event) => {
     render();
     return;
   }
-  if (target.dataset.action === "reset-demo") {
-    if (confirm("Restaurar os dados importados da planilha? Os pedidos criados neste navegador serão removidos.")) {
-      store = structuredClone(seedData);
-      saveStore();
-      state.selectedReservationId = state.user?.role === "admin" ? getSortedReservations()[0]?.id || null : null;
-      render();
-    }
-  }
   if (target.dataset.action === "clear-finance-filters") {
     state.financeFilters = {
       search: "",
@@ -6203,7 +6817,9 @@ document.addEventListener("click", async (event) => {
     render();
   }
   if (target.dataset.action === "new-payment-method") {
+    clearFormState();
     state.editingPaymentMethodId = "";
+    state.modal = { type: "payment-method" };
     render();
     return;
   }
@@ -6310,17 +6926,35 @@ document.addEventListener("click", async (event) => {
     render();
   }
   if (target.dataset.openReservation) {
-    if (target.dataset.jumpReservations) state.adminTab = "reservas";
-    state.selectedReservationId = target.dataset.openReservation;
+    const requestedReservationId = target.dataset.openReservation;
+    if (target.dataset.jumpReservations) {
+      state.adminTab = "reservas";
+      state.selectedReservationId = requestedReservationId;
+    } else {
+      state.selectedReservationId = state.selectedReservationId === requestedReservationId ? null : requestedReservationId;
+    }
     render();
   }
   if (target.dataset.openFinance) {
     state.adminTab = "financeiro";
-    state.selectedReservationId = target.dataset.openFinance;
+    const requestedFinanceId = target.dataset.openFinance;
+    state.selectedReservationId = state.selectedReservationId === requestedFinanceId ? null : requestedFinanceId;
     render();
   }
+  if (target.dataset.newPayment) {
+    state.modal = { type: "payment", id: target.dataset.newPayment };
+    render();
+    return;
+  }
+  if (target.dataset.openReceipt) {
+    state.modal = { type: "receipt", id: target.dataset.openReceipt };
+    render();
+    return;
+  }
   if (target.dataset.editPaymentMethod) {
+    clearFormState();
     state.editingPaymentMethodId = target.dataset.editPaymentMethod;
+    state.modal = { type: "payment-method", id: target.dataset.editPaymentMethod };
     render();
     return;
   }

@@ -7,7 +7,7 @@
   --sage: #a8b8a1;
   --ink: #353535;
   --muted: #7b746e;
-  --canvas: #fbf8f3;
+  --canvas: #f1ece3;
   --surface: #fffdf9;
   --line: rgba(44, 58, 71, 0.14);
   --rose-weak: #f8e7e8;
@@ -47,9 +47,9 @@ body::before {
   pointer-events: none;
   content: "";
   background:
-    radial-gradient(circle at 16% 12%, rgba(201, 123, 139, 0.13), transparent 30%),
-    radial-gradient(circle at 88% 8%, rgba(216, 190, 150, 0.18), transparent 34%),
-    linear-gradient(135deg, #fbf8f3 0%, #f7f2ec 48%, #f2eadf 100%);
+    radial-gradient(circle at 16% 12%, rgba(201, 123, 139, 0.1), transparent 30%),
+    radial-gradient(circle at 88% 8%, rgba(216, 190, 150, 0.22), transparent 34%),
+    linear-gradient(135deg, #f1ece3 0%, #ece3d4 52%, #e5d7c2 100%);
 }
 
 h1,
@@ -403,6 +403,16 @@ button:disabled {
   border-radius: 8px;
   background: #fff;
   padding: 12px;
+}
+
+.payment-admin-card .row-actions {
+  align-items: center;
+}
+
+.payment-admin-card .status-pill {
+  min-width: 76px;
+  justify-content: center;
+  text-align: center;
 }
 
 .payment-admin-card span {
@@ -1474,18 +1484,25 @@ th {
 /* Premium Atelie LICA visual identity */
 .auth-layout {
   min-height: 100dvh;
-  grid-template-columns: minmax(420px, 1fr) minmax(380px, 0.84fr);
-  background: var(--paper);
+  grid-template-columns: minmax(560px, 1fr) minmax(420px, 0.96fr);
+  background:
+    radial-gradient(circle at 78% 84%, rgba(201, 123, 139, 0.12), transparent 24%),
+    radial-gradient(circle at 92% 12%, rgba(216, 190, 150, 0.16), transparent 28%),
+    var(--canvas);
 }
 
 .brand-panel {
   position: relative;
+  display: grid;
+  align-content: center;
   overflow: hidden;
   background:
-    linear-gradient(135deg, rgba(44, 58, 71, 0.96), rgba(44, 58, 71, 0.84)),
-    linear-gradient(45deg, rgba(201, 123, 139, 0.16), transparent 55%);
+    radial-gradient(circle at 88% 18%, rgba(216, 190, 150, 0.12), transparent 26%),
+    linear-gradient(145deg, rgba(13, 32, 54, 0.98), rgba(21, 43, 66, 0.96) 58%, rgba(32, 49, 63, 0.98)),
+    linear-gradient(45deg, rgba(201, 123, 139, 0.14), transparent 55%);
   color: #fffdf9;
-  padding: clamp(32px, 5vw, 72px);
+  gap: clamp(14px, 2.3vw, 24px);
+  padding: clamp(22px, 2.9vw, 42px);
 }
 
 .brand-panel::before,
@@ -1496,19 +1513,19 @@ th {
 }
 
 .brand-panel::before {
-  inset: 22px;
-  border: 1px solid rgba(216, 190, 150, 0.32);
-  border-radius: 36px;
+  inset: clamp(14px, 2vw, 28px);
+  border: 1px solid rgba(216, 190, 150, 0.36);
+  border-radius: clamp(28px, 4vw, 46px);
 }
 
 .brand-panel::after {
-  width: 520px;
-  height: 520px;
-  right: -180px;
-  bottom: -210px;
+  width: 540px;
+  height: 540px;
+  right: -160px;
+  bottom: -190px;
   border-radius: 50%;
-  background: rgba(201, 123, 139, 0.22);
-  filter: blur(4px);
+  background: rgba(201, 123, 139, 0.16);
+  filter: blur(8px);
 }
 
 .brand-copy,
@@ -1518,21 +1535,25 @@ th {
 }
 
 .brand-logo-large {
-  width: min(190px, 50vw);
-  border: 1px solid rgba(216, 190, 150, 0.52);
-  box-shadow: 0 26px 80px rgba(0, 0, 0, 0.28);
+  width: clamp(112px, 9.2vw, 132px);
+  margin: 0 auto 14px;
+  border: 2px solid rgba(216, 190, 150, 0.82);
+  background: #152b42;
+  box-shadow: 0 20px 70px rgba(0, 0, 0, 0.32);
 }
 
 .brand-name {
-  max-width: 700px;
+  max-width: 760px;
+  margin-inline: auto;
   color: #fffdf9;
   font-family: var(--font-title);
-  font-size: clamp(3rem, 7vw, 5.8rem);
-  line-height: 0.88;
+  font-size: clamp(2.95rem, 4.7vw, 5.15rem);
+  line-height: 0.9;
+  text-align: center;
 }
 
 .brand-kicker {
-  display: inline-flex;
+  display: none;
   align-items: center;
   gap: 10px;
   color: #f4dce0;
@@ -1549,50 +1570,91 @@ th {
   content: "";
 }
 
+.brand-divider,
+.login-divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin: 10px auto 12px;
+  color: #e9a8ad;
+}
+
+.brand-divider::before,
+.brand-divider::after,
+.login-divider::before,
+.login-divider::after {
+  width: min(160px, 26vw);
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(201, 123, 139, 0.58), transparent);
+  content: "";
+}
+
+.brand-divider span,
+.login-divider span {
+  width: 9px;
+  height: 9px;
+  transform: rotate(45deg);
+  border-radius: 3px 3px 0 3px;
+  background: currentColor;
+}
+
 .brand-lede,
 .brand-panel p {
-  max-width: 650px;
+  max-width: 720px;
+  margin-inline: auto;
   color: rgba(255, 253, 249, 0.84);
-  font-size: 1.04rem;
+  font-size: clamp(0.98rem, 1.2vw, 1.2rem);
+  line-height: 1.35;
+  text-align: center;
 }
 
 .brand-notes {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 10px;
-  margin-top: 26px;
+  margin-top: 18px;
 }
 
 .brand-notes span {
-  border: 1px solid rgba(216, 190, 150, 0.36);
+  min-width: 148px;
+  border: 1px solid rgba(216, 190, 150, 0.18);
   border-radius: 999px;
   background: rgba(255, 253, 249, 0.08);
   color: #fffdf9;
-  padding: 9px 13px;
-  font-size: 0.86rem;
+  padding: 10px 14px;
+  font-size: 0.84rem;
   font-weight: 700;
+  text-align: center;
+  backdrop-filter: blur(14px);
 }
 
 .hero-art-card {
-  width: min(100%, 620px);
-  border: 1px solid rgba(216, 190, 150, 0.3);
-  border-radius: 32px;
-  background: rgba(255, 253, 249, 0.08);
-  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.28);
-  padding: 12px;
+  width: min(100%, 720px);
+  margin: 4px auto 0;
+  border: 1px solid rgba(216, 190, 150, 0.28);
+  border-radius: 26px;
+  background: rgba(255, 253, 249, 0.1);
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.26);
+  padding: 0;
   backdrop-filter: blur(16px);
 }
 
+.hero-login-image,
 .hero-canvas {
   width: 100%;
+  height: clamp(210px, 21vw, 300px);
+  display: block;
   border: 0;
-  border-radius: 24px;
+  border-radius: inherit;
   background: var(--surface);
   box-shadow: none;
+  object-fit: cover;
 }
 
 .hero-caption {
-  display: grid;
+  display: none;
   gap: 3px;
   padding: 14px 16px 8px;
 }
@@ -1608,20 +1670,50 @@ th {
 }
 
 .auth-panel {
-  align-content: start;
+  display: grid;
+  align-content: center;
+  justify-items: center;
   background:
-    linear-gradient(180deg, rgba(255, 253, 249, 0.82), rgba(247, 242, 236, 0.9)),
-    var(--paper);
-  padding: clamp(42px, 9vh, 92px) clamp(24px, 5vw, 70px) clamp(24px, 5vw, 70px);
+    radial-gradient(circle at 74% 86%, rgba(201, 123, 139, 0.1), transparent 24%),
+    linear-gradient(180deg, rgba(255, 253, 249, 0.34), rgba(241, 236, 227, 0.96)),
+    var(--canvas);
+  padding: clamp(34px, 7vh, 92px) clamp(24px, 6vw, 86px);
 }
 
 .login-box {
   border: 1px solid rgba(44, 58, 71, 0.12);
-  border-radius: 30px;
+  border-radius: 26px;
   background: rgba(255, 253, 249, 0.88);
-  box-shadow: var(--shadow);
-  padding: clamp(26px, 4vw, 42px);
+  box-shadow: 0 28px 90px rgba(44, 58, 71, 0.14);
+  padding: clamp(30px, 4.2vw, 52px);
   backdrop-filter: blur(18px);
+}
+
+.login-box:not(.registration-box) {
+  width: min(100%, 430px);
+}
+
+.login-emblem {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  margin: 0 auto 18px;
+  border: 1px solid rgba(201, 123, 139, 0.18);
+  border-radius: 999px;
+  color: var(--rose);
+  background:
+    radial-gradient(circle, rgba(201, 123, 139, 0.12), rgba(255, 253, 249, 0.72));
+}
+
+.login-emblem svg {
+  width: 21px;
+  height: 21px;
+  fill: rgba(201, 123, 139, 0.12);
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
 }
 
 .login-box h2,
@@ -1633,6 +1725,11 @@ th {
   line-height: 0.98;
 }
 
+.login-box h2 {
+  font-size: clamp(2.15rem, 3.4vw, 2.8rem);
+  text-align: center;
+}
+
 .section-title p,
 .modal-title p,
 .login-box p {
@@ -1640,8 +1737,103 @@ th {
   font-size: 0.96rem;
 }
 
+.login-box > p {
+  margin-top: 8px;
+  text-align: center;
+}
+
+.login-field {
+  margin-top: 22px;
+}
+
+.login-input-shell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(44, 58, 71, 0.15);
+  border-radius: 14px;
+  background: rgba(255, 253, 249, 0.92);
+  padding: 0 12px;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    background 0.18s ease;
+}
+
+.login-input-shell:focus-within {
+  border-color: rgba(201, 123, 139, 0.64);
+  box-shadow: 0 0 0 4px rgba(201, 123, 139, 0.12);
+  background: #fffdf9;
+}
+
+.login-input-shell input {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 13px 0;
+}
+
+.login-input-shell input:focus {
+  box-shadow: none;
+}
+
+.login-input-icon,
+.password-toggle {
+  flex: 0 0 auto;
+  color: #8e99a6;
+}
+
+.login-input-icon svg,
+.password-toggle svg {
+  display: block;
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.9;
+}
+
+.password-toggle {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  min-height: 34px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  padding: 0;
+}
+
+.password-toggle:hover,
+.password-toggle.active {
+  color: var(--rose);
+  background: rgba(201, 123, 139, 0.08);
+}
+
+.login-actions {
+  display: grid;
+  gap: 14px;
+  margin-top: 28px;
+}
+
+.login-actions .primary-button,
+.login-actions .secondary-button {
+  display: inline-flex;
+  align-items: center;
+  width: 100%;
+  justify-content: center;
+}
+
+.login-actions .auth-link-button {
+  margin-top: 0;
+}
+
 .field label {
-  color: rgba(53, 53, 53, 0.78);
+  color: var(--navy);
   font-size: 0.8rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -1669,6 +1861,15 @@ th {
   border-color: rgba(201, 123, 139, 0.64);
   box-shadow: 0 0 0 4px rgba(201, 123, 139, 0.12);
   background: #fffdf9;
+}
+
+.field .login-input-shell input,
+.field .login-input-shell input:focus {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 13px 0;
 }
 
 .tab-button,
@@ -1816,6 +2017,58 @@ th {
 
 .panel-body {
   padding: 22px;
+}
+
+.section-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.kit-addon-shortcuts .secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.service-fees-panel .panel-body {
+  padding-block: 16px;
+}
+
+.service-fees-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+}
+
+.service-fees-fields {
+  flex: 1 1 620px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.service-fees-form .field {
+  margin-top: 0;
+}
+
+.service-fees-form .actions {
+  flex: 0 0 auto;
+  margin-top: 0;
+}
+
+.kit-addon-stack {
+  display: grid;
+  gap: 20px;
+  margin-top: 18px;
+}
+
+.kit-addon-stack .table-wrap {
+  width: 100%;
 }
 
 .kit-grid,
@@ -2028,11 +2281,15 @@ th {
 @media (max-width: 900px) {
   .auth-layout {
     grid-template-columns: 1fr;
+    background:
+      radial-gradient(circle at 68% 26%, rgba(201, 123, 139, 0.26), transparent 28%),
+      linear-gradient(145deg, #0d2036, #152b42 62%, #20313f);
   }
 
   .brand-panel {
     min-height: auto;
-    padding: 32px 22px;
+    padding: 32px 22px 22px;
+    background: transparent;
   }
 
   .brand-panel::before {
@@ -2041,17 +2298,26 @@ th {
   }
 
   .hero-art-card {
-    display: none;
+    display: block;
+    width: min(100%, 680px);
+    margin-top: 22px;
+  }
+
+  .hero-login-image,
+  .hero-canvas {
+    height: clamp(180px, 36vw, 270px);
   }
 
   .auth-panel {
-    padding: 22px;
+    align-content: start;
+    background: transparent;
+    padding: 0 22px 34px;
   }
 }
 
 @media (max-width: 720px) {
   .brand-panel {
-    padding: 22px;
+    padding: 22px 18px 18px;
   }
 
   .brand-panel::before {
@@ -2060,22 +2326,40 @@ th {
   }
 
   .brand-logo-large {
-    width: 132px;
-    margin-bottom: 16px;
+    width: min(150px, 36vw);
+    margin-bottom: 14px;
   }
 
   .brand-name {
-    font-size: clamp(2.65rem, 15vw, 3.35rem);
+    font-size: clamp(2.7rem, 10.8vw, 4.35rem);
   }
 
   .brand-lede,
   .brand-panel p {
-    font-size: 0.94rem;
+    font-size: clamp(0.98rem, 4.1vw, 1.26rem);
     line-height: 1.55;
   }
 
   .brand-notes {
-    display: none;
+    display: flex;
+    gap: 8px;
+    margin-top: 18px;
+  }
+
+  .brand-notes span {
+    min-width: 0;
+    flex: 1 1 30%;
+    padding: 9px 10px;
+    font-size: 0.7rem;
+  }
+
+  .brand-divider::before,
+  .brand-divider::after {
+    width: 28vw;
+  }
+
+  .hero-art-card {
+    border-radius: 22px;
   }
 
   .main {
@@ -2084,8 +2368,22 @@ th {
   }
 
   .login-box {
-    border-radius: 24px;
-    padding: 24px;
+    border-radius: 28px;
+    padding: 34px 24px;
+  }
+
+  .login-box h2 {
+    font-size: clamp(2.35rem, 9.2vw, 3rem);
+  }
+
+  .login-input-shell {
+    border-radius: 18px;
+    padding-inline: 14px;
+  }
+
+  .login-actions .primary-button,
+  .login-actions .secondary-button {
+    min-height: 54px;
   }
 
   .panel-header,
@@ -2174,6 +2472,621 @@ th {
 
   .physical-contract-upload input {
     max-width: 100%;
+  }
+}
+
+.admin-reservations-layout {
+  display: grid;
+  grid-template-columns: minmax(340px, 0.9fr) minmax(620px, 1.35fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.reservations-table-panel {
+  overflow: hidden;
+}
+
+.reservations-table {
+  min-width: 1060px;
+}
+
+.reservation-table-row.selected td {
+  background: rgba(201, 123, 139, 0.06);
+  border-bottom-color: rgba(201, 123, 139, 0.16);
+}
+
+.reservation-table-row.selected td:first-child {
+  color: var(--rose);
+  font-weight: 900;
+}
+
+.reservation-expanded-row td {
+  border-bottom: 1px solid rgba(201, 123, 139, 0.16);
+  background: rgba(247, 242, 236, 0.34);
+  padding: 0 18px 22px;
+}
+
+.reservation-expanded-detail {
+  border-top: 1px dashed rgba(44, 58, 71, 0.14);
+  padding-top: 18px;
+}
+
+.reservations-list-panel,
+.reservation-detail-panel {
+  min-width: 0;
+}
+
+.reservation-detail-panel .panel-body {
+  background: rgba(247, 242, 236, 0.38);
+}
+
+.reservation-detail {
+  display: grid;
+  gap: 16px;
+}
+
+.reservation-hero-card,
+.reservation-info-card {
+  border: 1px solid rgba(44, 58, 71, 0.12);
+  border-radius: 24px;
+  background: rgba(255, 253, 249, 0.94);
+  box-shadow: var(--shadow-soft);
+}
+
+.reservation-hero-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 20px;
+  align-items: center;
+  padding: 22px;
+  background:
+    linear-gradient(135deg, rgba(255, 253, 249, 0.96), rgba(247, 242, 236, 0.8)),
+    linear-gradient(90deg, rgba(201, 123, 139, 0.14), rgba(216, 190, 150, 0.12));
+}
+
+.reservation-hero-main,
+.reservation-hero-total,
+.reservation-detail-main,
+.reservation-detail-side,
+.reservation-action-stack,
+.receipt-compact {
+  display: grid;
+  gap: 12px;
+}
+
+.reservation-hero-main h3,
+.reservation-card-heading h4 {
+  margin: 0;
+}
+
+.reservation-hero-main h3 {
+  font-size: 2.2rem;
+  line-height: 0.95;
+}
+
+.reservation-hero-main > strong {
+  color: var(--ink);
+  font-size: 1rem;
+}
+
+.reservation-hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.reservation-hero-total {
+  min-width: 180px;
+  border: 1px solid rgba(216, 190, 150, 0.34);
+  border-radius: 22px;
+  background: rgba(255, 253, 249, 0.78);
+  padding: 16px;
+  text-align: right;
+}
+
+.reservation-hero-total span,
+.detail-eyebrow,
+.finance-mini-card span {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.reservation-hero-total strong {
+  color: var(--rose);
+  font-family: var(--font-title);
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.reservation-hero-total small {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.reservation-detail-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(270px, 0.42fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.reservation-detail-side {
+  position: sticky;
+  top: 88px;
+}
+
+.reservation-info-card {
+  padding: 18px;
+}
+
+.reservation-card-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.reservation-card-heading h4 {
+  color: var(--navy);
+  font-family: var(--font-title);
+  font-size: 1.35rem;
+}
+
+.reservation-info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px 16px;
+}
+
+.reservation-info-grid .detail-row {
+  grid-template-columns: minmax(116px, 0.72fr) minmax(0, 1fr);
+  gap: 8px;
+  border-bottom: 1px dashed rgba(44, 58, 71, 0.12);
+  padding-bottom: 10px;
+}
+
+.reservation-info-grid .detail-row strong {
+  overflow-wrap: anywhere;
+}
+
+.compact-field {
+  margin-top: 0;
+}
+
+.finance-mini-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+.finance-mini-card {
+  min-height: 78px;
+  border: 1px solid rgba(44, 58, 71, 0.1);
+  border-radius: 18px;
+  background: rgba(247, 242, 236, 0.58);
+  padding: 12px;
+}
+
+.finance-mini-card strong {
+  display: block;
+  margin-top: 8px;
+  color: var(--navy);
+  font-size: 1.02rem;
+}
+
+.finance-mini-card.is-total {
+  border-color: rgba(201, 123, 139, 0.28);
+  background: rgba(201, 123, 139, 0.09);
+}
+
+.finance-mini-card.is-total strong {
+  color: var(--rose);
+  font-family: var(--font-title);
+  font-size: 1.55rem;
+}
+
+.finance-mini-card.is-pending {
+  border-color: rgba(180, 35, 24, 0.24);
+  background: rgba(180, 35, 24, 0.06);
+}
+
+.finance-mini-card.is-pending strong {
+  color: var(--danger);
+}
+
+.finance-mini-card.is-paid {
+  border-color: rgba(168, 184, 161, 0.42);
+  background: rgba(168, 184, 161, 0.16);
+}
+
+.finance-mini-card.is-paid strong {
+  color: var(--ok);
+}
+
+.reservation-actions-panel {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(160px, 1fr));
+  gap: 14px;
+  border-color: rgba(201, 123, 139, 0.22);
+}
+
+.reservation-actions-panel .reservation-card-heading {
+  grid-column: 1 / -1;
+  margin-bottom: 0;
+}
+
+.reservation-actions-panel .field {
+  margin-top: 0;
+}
+
+.reservation-action-stack {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.reservation-action-stack button {
+  display: inline-flex;
+  align-items: center;
+  width: 100%;
+  justify-content: center;
+}
+
+.reservation-accordion {
+  border: 1px solid rgba(44, 58, 71, 0.1);
+  border-radius: 18px;
+  background: rgba(247, 242, 236, 0.48);
+  padding: 0;
+}
+
+.reservation-accordion + .reservation-accordion {
+  margin-top: 10px;
+}
+
+.reservation-accordion summary,
+details.reservation-info-card > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.reservation-accordion summary::-webkit-details-marker,
+details.reservation-info-card > summary::-webkit-details-marker {
+  display: none;
+}
+
+.reservation-accordion summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+}
+
+.reservation-accordion summary span {
+  color: var(--navy);
+  font-weight: 800;
+}
+
+.reservation-accordion summary strong {
+  color: var(--rose);
+  font-size: 0.86rem;
+}
+
+.reservation-accordion .item-list,
+.reservation-accordion .muted,
+.reservation-accordion .small-note {
+  margin: 0;
+  padding: 0 16px 16px 34px;
+}
+
+.reservation-accordion .muted,
+.reservation-accordion .small-note {
+  padding-left: 16px;
+}
+
+.reservation-closing-card .reservation-card-heading {
+  margin-bottom: 0;
+}
+
+.reservation-closing-card[open] .reservation-card-heading {
+  margin-bottom: 14px;
+}
+
+.reservation-closing-card .admin-reservation-fields {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-radius: 20px;
+  box-shadow: none;
+}
+
+.receipt-compact {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+}
+
+.receipt-thumb,
+.receipt-file-icon {
+  width: 76px;
+  height: 76px;
+  border: 1px solid rgba(44, 58, 71, 0.12);
+  border-radius: 18px;
+  background: rgba(247, 242, 236, 0.72);
+}
+
+.receipt-thumb {
+  object-fit: cover;
+}
+
+.receipt-file-icon {
+  display: grid;
+  place-items: center;
+  color: var(--rose);
+  font-weight: 900;
+}
+
+.receipt-modal {
+  width: min(860px, 100%);
+}
+
+.receipt-modal-preview,
+.receipt-pdf-preview {
+  width: 100%;
+  max-height: 68vh;
+  border: 1px solid rgba(44, 58, 71, 0.12);
+  border-radius: 22px;
+  background: #fff;
+}
+
+.receipt-modal-preview {
+  object-fit: contain;
+}
+
+.receipt-pdf-preview {
+  min-height: 68vh;
+}
+
+.finance-table-panel {
+  overflow: hidden;
+}
+
+.finance-table {
+  min-width: 1240px;
+}
+
+.finance-table-row.selected td {
+  background: rgba(201, 123, 139, 0.06);
+  border-bottom-color: rgba(201, 123, 139, 0.16);
+}
+
+.finance-table-row.selected td:first-child {
+  color: var(--rose);
+  font-weight: 900;
+}
+
+.finance-row-actions {
+  min-width: 214px;
+}
+
+.finance-expanded-row td {
+  border-bottom: 1px solid rgba(201, 123, 139, 0.16);
+  background: rgba(247, 242, 236, 0.34);
+  padding: 0 18px 22px;
+}
+
+.finance-expanded-detail {
+  border-top: 1px dashed rgba(44, 58, 71, 0.14);
+  padding-top: 18px;
+}
+
+.finance-expanded-content {
+  max-width: 1180px;
+}
+
+.payment-modal {
+  width: min(760px, 100%);
+}
+
+.payment-method-modal {
+  width: min(820px, 100%);
+}
+
+.payment-modal-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.payment-modal-summary div {
+  border: 1px solid rgba(44, 58, 71, 0.1);
+  border-radius: 18px;
+  background: rgba(247, 242, 236, 0.58);
+  padding: 12px;
+}
+
+.payment-modal-summary span,
+.payment-compact-list .detail-eyebrow {
+  display: block;
+}
+
+.payment-modal-summary strong {
+  display: block;
+  margin-top: 8px;
+  color: var(--navy);
+}
+
+.payment-compact-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  border-top: 1px dashed rgba(44, 58, 71, 0.14);
+  padding-top: 14px;
+}
+
+.payment-compact-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid rgba(44, 58, 71, 0.08);
+  border-radius: 16px;
+  background: rgba(255, 253, 249, 0.74);
+  padding: 10px 12px;
+}
+
+.payment-compact-row strong {
+  color: var(--ok);
+  white-space: nowrap;
+}
+
+.payment-compact-empty {
+  margin-top: 12px;
+}
+
+.finance-payments-card .reservation-card-heading {
+  align-items: center;
+}
+
+.finance-payment-list {
+  display: grid;
+  gap: 12px;
+}
+
+.finance-payment-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.22fr) minmax(260px, 1fr) minmax(260px, 0.58fr);
+  gap: 14px;
+  align-items: center;
+  border: 1px solid rgba(44, 58, 71, 0.1);
+  border-radius: 20px;
+  background: rgba(247, 242, 236, 0.42);
+  padding: 14px;
+}
+
+.finance-payment-value {
+  display: grid;
+  gap: 6px;
+}
+
+.finance-payment-value strong {
+  color: var(--rose);
+  font-family: var(--font-title);
+  font-size: 1.65rem;
+  line-height: 1;
+}
+
+.finance-payment-value span {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.finance-payment-meta {
+  display: grid;
+  gap: 8px;
+}
+
+.finance-payment-meta .detail-row {
+  grid-template-columns: minmax(118px, 0.5fr) minmax(0, 1fr);
+  gap: 8px;
+  border-bottom: 1px dashed rgba(44, 58, 71, 0.11);
+  padding-bottom: 8px;
+}
+
+.finance-payment-file {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.finance-payment-file strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.finance-adjustments-card .admin-reservation-fields {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-radius: 20px;
+  background: rgba(247, 242, 236, 0.36);
+  box-shadow: none;
+}
+
+.finance-expanded-actions {
+  margin-top: 14px;
+}
+
+@media (max-width: 1180px) {
+  .admin-reservations-layout,
+  .reservation-detail-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .reservation-detail-side {
+    position: static;
+  }
+
+  .finance-payment-row,
+  .finance-adjustments-card .admin-reservation-fields {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .finance-payment-file {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 720px) {
+  .admin-reservations-layout {
+    gap: 14px;
+  }
+
+  .reservation-hero-card,
+  .reservation-info-grid,
+  .receipt-compact,
+  .finance-mini-grid,
+  .payment-modal-summary,
+  .finance-payment-row,
+  .finance-adjustments-card .admin-reservation-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .reservation-hero-card {
+    padding: 18px;
+  }
+
+  .reservation-hero-total {
+    min-width: 0;
+    text-align: left;
+  }
+
+  .reservation-info-card {
+    border-radius: 20px;
+    padding: 16px;
+  }
+
+  .reservation-info-grid .detail-row {
+    grid-template-columns: 1fr;
+  }
+
+  .section-actions,
+  .kit-addon-shortcuts,
+  .service-fees-form .actions {
+    width: 100%;
+  }
+
+  .service-fees-fields {
+    grid-template-columns: 1fr;
+    flex-basis: 100%;
+  }
+
+  .kit-addon-shortcuts .secondary-button,
+  .service-fees-form .primary-button {
+    width: 100%;
   }
 }
 
