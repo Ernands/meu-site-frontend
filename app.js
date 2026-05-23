@@ -135,7 +135,7 @@ const seedData = {
 
 const authTokenKey = "atelie-lica-auth-token";
 const authStorage = sessionStorage;
-const apiBaseUrl = window.ATELIE_LICA_API_BASE_URL || "https://minha-api-backend-fuf9.onrender.com";
+const apiBaseUrl = window.ATELIE_LICA_API_BASE_URL || "https://minha-api-backend-fuf9.onrender.com/api";
 const apiTimeoutMs = 2500;
 const localFallbackEnabled = false;
 const app = document.querySelector("#app");
