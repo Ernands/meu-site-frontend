@@ -2150,13 +2150,15 @@ function renderLogin() {
             </div>
           </div>
           <div class="login-actions">
-            <button class="primary-button" type="submit">Entrar</button>
-            <button class="secondary-button auth-link-button" type="button" data-action="show-register">Cadastrar-se</button>
+            <button class="primary-button" type="submit" ${pendingDisabledAttr()}>${pendingLabel("login", "Entrar", "Entrando...")}</button>
+            <button class="secondary-button auth-link-button" type="button" data-action="show-register" ${pendingDisabledAttr()}>Cadastrar-se</button>
+            ${isPending("login") ? `<div class="login-submit-status" role="status" aria-live="polite">Conectando com o portal. Isso pode levar alguns segundos.</div>` : ""}
           </div>
         </form>
         `}
       </section>
     </main>
+    ${toastMarkup()}
   `;
   drawHeroArt();
   if (state.authView !== "register") clearLoginAutofill();
@@ -5913,22 +5915,30 @@ async function handleLogin(form) {
   const login = String(formData.get("login") || formData.get("email") || "").trim().toLowerCase();
   const password = form.password.value;
 
+  if (!login || !password) {
+    showToast("Informe CPF/login e senha para entrar.", "warning");
+    return false;
+  }
+
+  showToast("Verificando acesso. Aguarde um instante...", "warning");
+
   const apiLogin = await loginWithApi(role, login, password);
   if (apiLogin.available) {
     if (!apiLogin.payload) {
-      alert(apiLogin.error?.message || "Login ou senha invalidos.");
-      return;
+      showToast(apiLogin.error?.message || "Login ou senha invalidos.", "error");
+      return false;
     }
 
     applyApiStore(apiLogin.payload.store);
     setAuthToken(apiLogin.payload.token);
     completeLogin(normalizeUser(apiLogin.payload.user));
-    return;
+    showToast("Acesso liberado. Carregando o portal...", "success");
+    return true;
   }
 
   if (!localFallbackEnabled) {
-    alert("Nao foi possivel conectar ao servidor. Em producao, o portal exige API e banco de dados ativos.");
-    return;
+    showToast("A API demorou para responder ou esta indisponivel. Aguarde alguns segundos e tente novamente.", "error");
+    return false;
   }
 
   const user = store.users.find((entry) => {
@@ -5937,14 +5947,15 @@ async function handleLogin(form) {
     return entry.role === role && (userLogin === login || userEmail === login) && entry.password === password;
   });
   if (!user) {
-    alert("Login ou senha inválidos.");
-    return;
+    showToast("Login ou senha invalidos.", "error");
+    return false;
   }
   if (user.id !== "admin" && user.enabled === false) {
-    alert("Usuário desabilitado. Fale com o administrador.");
-    return;
+    showToast("Usuario desabilitado. Fale com o administrador.", "error");
+    return false;
   }
   completeLogin(user);
+  return true;
 }
 
 async function submitQuote() {
@@ -6679,7 +6690,7 @@ function optionMarkup(value, selectedValue, label = value) {
 document.addEventListener("submit", async (event) => {
   if (event.target.id === "loginForm") {
     event.preventDefault();
-    await handleLogin(event.target);
+    await runAction("login", () => handleLogin(event.target), "");
     return;
   }
   if (event.target.id === "registrationForm") {

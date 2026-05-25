@@ -1832,6 +1832,17 @@ th {
   margin-top: 0;
 }
 
+.login-submit-status {
+  border: 1px solid rgba(216, 190, 150, 0.32);
+  border-radius: 16px;
+  background: rgba(216, 190, 150, 0.14);
+  color: var(--navy);
+  padding: 10px 12px;
+  text-align: center;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
 .field label {
   color: var(--navy);
   font-size: 0.8rem;
