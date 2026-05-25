@@ -138,6 +138,16 @@ const authStorage = sessionStorage;
 const apiBaseUrl = window.ATELIE_LICA_API_BASE_URL || "https://minha-api-backend-fuf9.onrender.com/api";
 const apiTimeoutMs = 15000;
 const localFallbackEnabled = false;
+const catalogPhotoUploadConfig = {
+  allowedTypes: ["image/jpeg", "image/png", "image/webp"],
+  maxOriginalBytes: 8 * 1024 * 1024,
+  maxOutputBytes: 650 * 1024,
+  maxDimension: 1600,
+  retryDimensions: [1600, 1280, 1000, 800],
+  initialQuality: 0.82,
+  minQuality: 0.58,
+  qualityStep: 0.08,
+};
 const app = document.querySelector("#app");
 
 let store = normalizeStore(structuredClone(seedData));
@@ -743,7 +753,7 @@ async function apiMutationWithStore(path, options) {
   try {
     const payload = await apiRequest(path, {
       ...options,
-      timeoutMs: 7000,
+      timeoutMs: apiTimeoutMs,
     });
     return { available: true, payload };
   } catch (error) {
@@ -1216,8 +1226,7 @@ async function saveKitAddonFromForm(form) {
   } catch {
     existingPhotos = [];
   }
-  const uploadedPhotos = await readPhotoFiles(form.querySelector('[name="photos"]'), maxPhotos);
-  const photos = uploadedPhotos.length ? uploadedPhotos : existingPhotos.slice(0, maxPhotos);
+  const photos = await prepareCatalogPhotos(form.querySelector('[name="photos"]'), existingPhotos, maxPhotos);
   const itemCodes = formData.getAll("itemCodes").map((code) => String(code)).filter(Boolean);
   const itemLines = itemCodes.map(findItem).filter(Boolean).map(formatItemLine);
   const description = String(formData.get("description") || "").trim();
@@ -1261,19 +1270,108 @@ async function saveKitAddonFromForm(form) {
   state.modal = null;
 }
 
+async function prepareCatalogPhotos(input, existingPhotos, maxPhotos) {
+  const uploadedPhotos = await readPhotoFiles(input, maxPhotos);
+  const photos = uploadedPhotos.length ? uploadedPhotos : existingPhotos.slice(0, maxPhotos);
+  return Promise.all(photos.map((photo) => normalizeExistingCatalogPhoto(photo)));
+}
+
 function readPhotoFiles(input, maxPhotos) {
   const files = [...(input?.files || [])].slice(0, maxPhotos);
-  return Promise.all(
-    files.map(
-      (file) =>
-        new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result);
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        }),
-    ),
+  return Promise.all(files.map((file) => optimizeCatalogPhotoFile(file)));
+}
+
+async function normalizeExistingCatalogPhoto(photo) {
+  if (!isInlinePhotoData(photo) || dataUrlByteSize(photo) <= catalogPhotoUploadConfig.maxOutputBytes) return photo;
+  const image = await loadCatalogPhotoImage(String(photo));
+  return exportCatalogPhotoDataUrl(image, "foto cadastrada");
+}
+
+async function optimizeCatalogPhotoFile(file) {
+  if (!catalogPhotoUploadConfig.allowedTypes.includes(file.type)) {
+    throw photoUploadError(`A foto "${file.name}" precisa estar em JPG, PNG ou WebP.`);
+  }
+
+  if (file.size > catalogPhotoUploadConfig.maxOriginalBytes) {
+    throw photoUploadError(
+      `A foto "${file.name}" tem ${formatPhotoSize(file.size)}. Use uma imagem de ate ${formatPhotoSize(catalogPhotoUploadConfig.maxOriginalBytes)}.`,
+    );
+  }
+
+  const image = await loadCatalogPhotoImage(URL.createObjectURL(file), true);
+  return exportCatalogPhotoDataUrl(image, file.name);
+}
+
+function loadCatalogPhotoImage(source, revokeAfterLoad = false) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => {
+      if (revokeAfterLoad) URL.revokeObjectURL(source);
+      resolve(image);
+    };
+    image.onerror = () => {
+      if (revokeAfterLoad) URL.revokeObjectURL(source);
+      reject(photoUploadError("Nao foi possivel ler uma das imagens selecionadas."));
+    };
+    image.src = source;
+  });
+}
+
+function exportCatalogPhotoDataUrl(image, label) {
+  for (const maxDimension of catalogPhotoUploadConfig.retryDimensions) {
+    const canvas = drawCatalogPhotoToCanvas(image, maxDimension);
+    for (
+      let quality = catalogPhotoUploadConfig.initialQuality;
+      quality >= catalogPhotoUploadConfig.minQuality - 0.001;
+      quality -= catalogPhotoUploadConfig.qualityStep
+    ) {
+      const dataUrl = canvas.toDataURL("image/jpeg", Number(quality.toFixed(2)));
+      if (dataUrlByteSize(dataUrl) <= catalogPhotoUploadConfig.maxOutputBytes) return dataUrl;
+    }
+  }
+
+  throw photoUploadError(
+    `A foto "${label}" ficou muito grande mesmo apos otimizar. Tente uma imagem com menos resolucao.`,
   );
+}
+
+function drawCatalogPhotoToCanvas(image, maxDimension) {
+  const sourceWidth = image.naturalWidth || image.width || 1;
+  const sourceHeight = image.naturalHeight || image.height || 1;
+  const scale = Math.min(1, maxDimension / Math.max(sourceWidth, sourceHeight));
+  const width = Math.max(1, Math.round(sourceWidth * scale));
+  const height = Math.max(1, Math.round(sourceHeight * scale));
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+  if (!context) throw photoUploadError("Nao foi possivel preparar a imagem para envio.");
+  canvas.width = width;
+  canvas.height = height;
+  context.fillStyle = "#fffdf9";
+  context.fillRect(0, 0, width, height);
+  context.drawImage(image, 0, 0, width, height);
+  return canvas;
+}
+
+function isInlinePhotoData(value) {
+  return /^data:image\/[^;,]+;base64,/i.test(String(value || ""));
+}
+
+function dataUrlByteSize(dataUrl) {
+  const base64 = String(dataUrl || "").split(",")[1] || "";
+  const padding = (base64.match(/=+$/) || [""])[0].length;
+  return Math.max(0, Math.ceil((base64.length * 3) / 4) - padding);
+}
+
+function formatPhotoSize(bytes) {
+  if (!Number.isFinite(bytes)) return "";
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1).replace(".", ",")} MB`;
+  return `${Math.ceil(bytes / 1024)} KB`;
+}
+
+function photoUploadError(message) {
+  const error = new Error(message);
+  error.userMessage = message;
+  return error;
 }
 
 function readReceiptFile(file) {
@@ -1429,8 +1527,7 @@ async function saveThemeFromForm(form) {
   } catch {
     existingPhotos = [];
   }
-  const uploadedPhotos = await readPhotoFiles(form.querySelector('[name="photos"]'), 3);
-  const photos = uploadedPhotos.length ? uploadedPhotos : existingPhotos.slice(0, 3);
+  const photos = await prepareCatalogPhotos(form.querySelector('[name="photos"]'), existingPhotos, 3);
   const entry = normalizeTheme({
     id: existingId || nextThemeId(),
     name: String(formData.get("name") || "").trim(),
@@ -5592,8 +5689,8 @@ function renderKitAddonModal() {
             </div>
             ${renderInventorySelector(model.itemCodes || [], isKit)}
             <div class="field full-span">
-              <label for="kit-addon-photos">Fotos até ${maxPhotos}</label>
-              <input id="kit-addon-photos" name="photos" type="file" accept="image/*" multiple />
+              <label for="kit-addon-photos">Fotos até ${maxPhotos} (JPG, PNG ou WebP)</label>
+              <input id="kit-addon-photos" name="photos" type="file" accept="image/jpeg,image/png,image/webp" multiple />
               <input name="existingPhotos" type="hidden" value="${escapeAttr(JSON.stringify(model.photos || []))}" />
               ${renderPhotoPreview(model.photos || [])}
               <div class="small-note">Ao enviar novas fotos, elas substituem as anteriores.</div>
@@ -5640,8 +5737,8 @@ function renderThemeModal() {
               <textarea id="theme-description" name="description">${escapeHtml(model.description || "")}</textarea>
             </div>
             <div class="field full-span">
-              <label for="theme-photos">Fotos até 3</label>
-              <input id="theme-photos" name="photos" type="file" accept="image/*" multiple />
+              <label for="theme-photos">Fotos até 3 (JPG, PNG ou WebP)</label>
+              <input id="theme-photos" name="photos" type="file" accept="image/jpeg,image/png,image/webp" multiple />
               <input name="existingPhotos" type="hidden" value="${escapeAttr(JSON.stringify(model.photos || []))}" />
               ${renderPhotoPreview(model.photos || [])}
               <div class="small-note">Ao enviar novas fotos, elas substituem as anteriores.</div>
