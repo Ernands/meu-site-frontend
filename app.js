@@ -139,13 +139,23 @@ const apiBaseUrl = window.ATELIE_LICA_API_BASE_URL || "https://minha-api-backend
 const apiTimeoutMs = 15000;
 const localFallbackEnabled = false;
 const catalogPhotoUploadConfig = {
-  allowedTypes: ["image/jpeg", "image/png", "image/webp"],
+  allowedTypes: ["image/jpeg", "image/jpg", "image/png", "image/webp"],
   maxOriginalBytes: 8 * 1024 * 1024,
   maxOutputBytes: 650 * 1024,
   maxDimension: 1600,
   retryDimensions: [1600, 1280, 1000, 800],
   initialQuality: 0.82,
   minQuality: 0.58,
+  qualityStep: 0.08,
+};
+const attachmentUploadConfig = {
+  allowedImageTypes: ["image/jpeg", "image/jpg", "image/png", "image/webp"],
+  allowedPdfTypes: ["application/pdf"],
+  maxOriginalBytes: 8 * 1024 * 1024,
+  maxImageOutputBytes: 1200 * 1024,
+  retryDimensions: [1800, 1600, 1280, 1000],
+  initialQuality: 0.84,
+  minQuality: 0.62,
   qualityStep: 0.08,
 };
 const app = document.querySelector("#app");
@@ -166,6 +176,7 @@ let state = {
   modal: null,
   toast: null,
   pendingAction: "",
+  navigationLoadingMessage: "",
   formErrors: {},
   authView: "login",
   registrationDraft: defaultRegistrationDraft(),
@@ -178,6 +189,7 @@ let state = {
   adminQuoteSearch: "",
   adminQuoteStarted: false,
   adminQuotePendingOverride: false,
+  scrollToJourneyStep: false,
   financeFilters: {
     search: "",
     status: "Todos",
@@ -1284,7 +1296,7 @@ function readPhotoFiles(input, maxPhotos) {
 async function normalizeExistingCatalogPhoto(photo) {
   if (!isInlinePhotoData(photo) || dataUrlByteSize(photo) <= catalogPhotoUploadConfig.maxOutputBytes) return photo;
   const image = await loadCatalogPhotoImage(String(photo));
-  return exportCatalogPhotoDataUrl(image, "foto cadastrada");
+  return exportCatalogPhotoDataUrl(image, "foto cadastrada", catalogPhotoUploadConfig);
 }
 
 async function optimizeCatalogPhotoFile(file) {
@@ -1299,7 +1311,7 @@ async function optimizeCatalogPhotoFile(file) {
   }
 
   const image = await loadCatalogPhotoImage(URL.createObjectURL(file), true);
-  return exportCatalogPhotoDataUrl(image, file.name);
+  return exportCatalogPhotoDataUrl(image, file.name, catalogPhotoUploadConfig);
 }
 
 function loadCatalogPhotoImage(source, revokeAfterLoad = false) {
@@ -1317,16 +1329,17 @@ function loadCatalogPhotoImage(source, revokeAfterLoad = false) {
   });
 }
 
-function exportCatalogPhotoDataUrl(image, label) {
-  for (const maxDimension of catalogPhotoUploadConfig.retryDimensions) {
+function exportCatalogPhotoDataUrl(image, label, config = catalogPhotoUploadConfig) {
+  const maxOutputBytes = config.maxOutputBytes || config.maxImageOutputBytes;
+  for (const maxDimension of config.retryDimensions) {
     const canvas = drawCatalogPhotoToCanvas(image, maxDimension);
     for (
-      let quality = catalogPhotoUploadConfig.initialQuality;
-      quality >= catalogPhotoUploadConfig.minQuality - 0.001;
-      quality -= catalogPhotoUploadConfig.qualityStep
+      let quality = config.initialQuality;
+      quality >= config.minQuality - 0.001;
+      quality -= config.qualityStep
     ) {
       const dataUrl = canvas.toDataURL("image/jpeg", Number(quality.toFixed(2)));
-      if (dataUrlByteSize(dataUrl) <= catalogPhotoUploadConfig.maxOutputBytes) return dataUrl;
+      if (dataUrlByteSize(dataUrl) <= maxOutputBytes) return dataUrl;
     }
   }
 
@@ -1375,69 +1388,118 @@ function photoUploadError(message) {
 }
 
 function readReceiptFile(file) {
-  if (!file) return Promise.resolve({ name: "", type: "", data: "" });
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve({ name: file.name, type: file.type, data: reader.result });
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
+  return readUploadFile(file, {
+    allowPdf: true,
+    allowedImageExtensions: [".jpg", ".jpeg", ".png", ".webp"],
+    invalidMessage: "Anexe um comprovante em PDF, JPG, JPEG, PNG ou WebP.",
+    maxSizeMessage: "O comprovante deve ter no maximo 8 MB.",
   });
 }
 
 function readPhysicalContractFile(file) {
-  if (!file) return Promise.resolve({ name: "", type: "", data: "" });
-  const allowedTypes = ["application/pdf", "image/jpeg", "image/png"];
-  const allowedExtensions = [".pdf", ".jpg", ".jpeg", ".png"];
-  const extension = `.${String(file.name || "").split(".").pop()}`.toLowerCase();
-  const isAllowed = allowedTypes.includes(file.type) || allowedExtensions.includes(extension);
-  const maxBytes = 8 * 1024 * 1024;
+  return readUploadFile(file, {
+    allowPdf: true,
+    allowedImageExtensions: [".jpg", ".jpeg", ".png"],
+    invalidMessage: "Anexe um contrato em PDF, JPG, JPEG ou PNG.",
+    maxSizeMessage: "O arquivo do contrato fisico deve ter no maximo 8 MB.",
+  });
+}
 
-  if (!isAllowed) {
-    const error = new Error("Formato de contrato fisico invalido.");
-    error.userMessage = "Anexe um contrato em PDF, JPG, JPEG ou PNG.";
-    throw error;
+function readPaymentReceiptFile(file) {
+  return readUploadFile(file, {
+    allowPdf: true,
+    allowedImageExtensions: [".jpg", ".jpeg", ".png"],
+    invalidMessage: "Anexe um comprovante em PDF, JPG, JPEG ou PNG.",
+    maxSizeMessage: "O comprovante deve ter no maximo 8 MB.",
+  });
+}
+
+async function readUploadFile(file, options = {}) {
+  if (!file) return { name: "", type: "", data: "" };
+  const extension = fileExtension(file.name);
+  const mimeType = String(file.type || "").toLowerCase();
+  const maxBytes = options.maxBytes || attachmentUploadConfig.maxOriginalBytes;
+  const allowedImageExtensions = options.allowedImageExtensions || [".jpg", ".jpeg", ".png", ".webp"];
+  const allowedImageTypes = options.allowedImageTypes || imageMimeTypesForExtensions(allowedImageExtensions);
+  const isPdf = Boolean(options.allowPdf) && (
+    attachmentUploadConfig.allowedPdfTypes.includes(mimeType) ||
+    extension === ".pdf"
+  );
+  const isImage = (
+    allowedImageTypes.includes(mimeType) ||
+    allowedImageExtensions.includes(extension)
+  );
+
+  if (!isPdf && !isImage) {
+    throw uploadFileError(options.invalidMessage || "Arquivo em formato invalido.");
   }
 
   if (file.size > maxBytes) {
-    const error = new Error("Contrato fisico muito grande.");
-    error.userMessage = "O arquivo do contrato fisico deve ter no maximo 8 MB.";
-    throw error;
+    throw uploadFileError(options.maxSizeMessage || `O arquivo deve ter no maximo ${formatPhotoSize(maxBytes)}.`);
   }
 
+  if (isPdf) {
+    return {
+      name: file.name,
+      type: "application/pdf",
+      data: await readFileAsDataUrl(file),
+    };
+  }
+
+  return {
+    name: withJpegExtension(file.name),
+    type: "image/jpeg",
+    data: await optimizeAttachmentImageFile(file),
+  };
+}
+
+async function optimizeAttachmentImageFile(file) {
+  const image = await loadCatalogPhotoImage(URL.createObjectURL(file), true);
+  return exportCatalogPhotoDataUrl(image, file.name, {
+    maxOutputBytes: attachmentUploadConfig.maxImageOutputBytes,
+    retryDimensions: attachmentUploadConfig.retryDimensions,
+    initialQuality: attachmentUploadConfig.initialQuality,
+    minQuality: attachmentUploadConfig.minQuality,
+    qualityStep: attachmentUploadConfig.qualityStep,
+  });
+}
+
+function readFileAsDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve({ name: file.name, type: file.type || "application/octet-stream", data: reader.result });
+    reader.onload = () => resolve(reader.result);
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
 }
 
-function readPaymentReceiptFile(file) {
-  if (!file) return Promise.resolve({ name: "", type: "", data: "" });
-  const allowedTypes = ["application/pdf", "image/jpeg", "image/png"];
-  const allowedExtensions = [".pdf", ".jpg", ".jpeg", ".png"];
-  const extension = `.${String(file.name || "").split(".").pop()}`.toLowerCase();
-  const isAllowed = allowedTypes.includes(file.type) || allowedExtensions.includes(extension);
-  const maxBytes = 8 * 1024 * 1024;
+function fileExtension(filename) {
+  const extension = String(filename || "").split(".").pop();
+  return extension && extension !== filename ? `.${extension}`.toLowerCase() : "";
+}
 
-  if (!isAllowed) {
-    const error = new Error("Formato de comprovante invalido.");
-    error.userMessage = "Anexe um comprovante em PDF, JPG, JPEG ou PNG.";
-    throw error;
-  }
-
-  if (file.size > maxBytes) {
-    const error = new Error("Comprovante muito grande.");
-    error.userMessage = "O comprovante deve ter no maximo 8 MB.";
-    throw error;
-  }
-
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve({ name: file.name, type: file.type || "application/octet-stream", data: reader.result });
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
+function imageMimeTypesForExtensions(extensions) {
+  const mimeTypes = new Set();
+  extensions.forEach((extension) => {
+    if (extension === ".jpg" || extension === ".jpeg") {
+      mimeTypes.add("image/jpeg");
+      mimeTypes.add("image/jpg");
+    }
+    if (extension === ".png") mimeTypes.add("image/png");
+    if (extension === ".webp") mimeTypes.add("image/webp");
   });
+  return [...mimeTypes];
+}
+
+function withJpegExtension(filename) {
+  const baseName = String(filename || "arquivo").replace(/\.[^.]+$/, "") || "arquivo";
+  return `${baseName}.jpg`;
+}
+
+function uploadFileError(message) {
+  const error = new Error(message);
+  error.userMessage = message;
+  return error;
 }
 
 async function toggleKitAddon(kind, id) {
@@ -2033,7 +2095,26 @@ function render() {
     drawAllKitArt();
     drawHeroArt();
     if (document.querySelector("#signaturePad")) attachSignaturePad();
+    scrollJourneyStepIntoView();
   });
+}
+
+function requestJourneyStepScroll() {
+  state.scrollToJourneyStep = true;
+}
+
+function scrollJourneyStepIntoView() {
+  if (!state.scrollToJourneyStep) return;
+  state.scrollToJourneyStep = false;
+
+  const panel = document.querySelector("[data-journey-step-panel]");
+  if (!panel) return;
+
+  const topbar = document.querySelector(".topbar");
+  const offset = (topbar?.offsetHeight || 0) + 12;
+  const top = Math.max(0, panel.getBoundingClientRect().top + window.scrollY - offset);
+  const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+  window.scrollTo({ top, behavior: reduceMotion ? "auto" : "smooth" });
 }
 
 function minEventDate() {
@@ -2063,6 +2144,19 @@ function pendingDisabledAttr() {
 
 function pendingLabel(action, idleLabel, pendingText = "Salvando...") {
   return isPending(action) ? `<span class="button-spinner" aria-hidden="true"></span>${pendingText}` : idleLabel;
+}
+
+function navigationLoadingMarkup() {
+  if (!state.navigationLoadingMessage) return "";
+  return `
+    <div class="navigation-loading" role="status" aria-live="polite" aria-busy="true">
+      <div class="navigation-loading-card">
+        <span class="navigation-spinner" aria-hidden="true"></span>
+        <strong>Abrindo</strong>
+        <p>${escapeHtml(state.navigationLoadingMessage)}</p>
+      </div>
+    </div>
+  `;
 }
 
 function toastMarkup() {
@@ -2183,6 +2277,19 @@ async function runAction(action, callback, successMessage, successType = "succes
     console.error(error);
     state.pendingAction = "";
     showToast(error?.userMessage || "NÃ£o foi possÃ­vel concluir a aÃ§Ã£o. Revise os dados e tente novamente.", "error");
+    render();
+  }
+}
+
+async function runNavigationLoading(message, callback) {
+  if (state.navigationLoadingMessage) return;
+  try {
+    state.navigationLoadingMessage = message;
+    render();
+    await nextFrame();
+    return await Promise.resolve(callback());
+  } finally {
+    state.navigationLoadingMessage = "";
     render();
   }
 }
@@ -2330,7 +2437,7 @@ function renderShell() {
   const roleLabel = state.user.role === "admin" ? "Admin" : "Cliente";
   const companyName = escapeHtml(store.company.name);
   app.innerHTML = `
-    <div class="app-shell">
+    <div class="app-shell ${state.modal ? "has-modal" : ""}">
       <header class="topbar">
         <div class="topbar-brand">
           <img class="topbar-logo" src="assets/atelie-lica-logo.png" alt="${companyName}" />
@@ -2340,11 +2447,12 @@ function renderShell() {
           </div>
         </div>
         <nav class="nav-tabs">${renderNav()}</nav>
-        <button class="ghost-button" data-action="logout">Sair</button>
+        <button class="ghost-button logout-button" data-action="logout">Sair</button>
       </header>
       <main class="main">
         ${state.user.role === "admin" ? renderAdmin() : renderClient()}
       </main>
+      ${navigationLoadingMarkup()}
       ${toastMarkup()}
       ${renderModal()}
     </div>
@@ -2374,6 +2482,29 @@ function renderNav() {
   ]
     .map(([id, label]) => `<button class="tab-button ${state.tab === id ? "active" : ""}" data-client-tab="${id}">${label}</button>`)
     .join("");
+}
+
+function adminTabLabel(id) {
+  const labels = {
+    dashboard: "Dashboard",
+    reservas: "Reservas",
+    financeiro: "Financeiro",
+    clientes: "Clientes",
+    estoque: "Estoque",
+    "kit-adicionais": "Kit e Adicionais",
+    temas: "Temas",
+    acessos: "Acessos",
+    "novo-orcamento": "Novo orçamento",
+  };
+  return labels[id] || "aba";
+}
+
+function clientTabLabel(id) {
+  const labels = {
+    orcamento: "Novo orçamento",
+    "minhas-reservas": "Meus pedidos",
+  };
+  return labels[id] || "aba";
 }
 
 function renderClient() {
@@ -2543,7 +2674,7 @@ function legacyCanOpenClientStep(step) {
   if (requestedStep === 2) return Boolean(getSelectedKit());
   if (requestedStep === 3) return Boolean(getSelectedKit() && themeSelectionName());
   if (requestedStep === 4) return Boolean(getSelectedKit() && themeSelectionName());
-  if (requestedStep === 5) return Boolean(currentReservation && !isCreatingNewQuote() && currentReservation.contractGeneratedAt);
+  if (requestedStep === 5) return Boolean(currentReservation && !isCreatingNewQuote() && isReservationContractAvailable(currentReservation));
   if (requestedStep === 6) {
     return Boolean(
       currentReservation &&
@@ -2567,6 +2698,7 @@ function legacyGoToClientStep(step) {
     }
   }
   state.clientStep = requestedStep;
+  requestJourneyStepScroll();
   render();
 }
 
@@ -2658,6 +2790,7 @@ function goToClientStep(step) {
   }
 
   state.clientStep = requestedStep;
+  requestJourneyStepScroll();
   render();
 }
 
@@ -2665,7 +2798,7 @@ function renderStepSelectKit() {
   const activeKits = getActiveKits();
   if (!activeKits.length) return `<div class="empty-state">Nenhum kit ativo no momento.</div>`;
   return `
-    <section class="panel">
+    <section class="panel journey-step-panel" data-journey-step-panel>
       <div class="panel-header"><h3>1. Selecionar Kit</h3><span class="small-note">${activeKits.length} kit(s) disponíveis</span></div>
       <div class="panel-body">
         <div class="kit-grid">${activeKits.map(renderClientKitCard).join("")}</div>
@@ -2698,7 +2831,7 @@ function renderStepSelectTheme() {
   const customMode = isCustomThemeMode();
   const hasTheme = Boolean(themeSelectionName());
   return `
-    <section class="panel">
+    <section class="panel journey-step-panel" data-journey-step-panel>
       <div class="panel-header"><h3>2. Escolher Tema/Kit</h3><span class="small-note">${themes.length} tema(s) disponíveis</span></div>
       <div class="panel-body">
         <div class="item-grid">
@@ -2727,8 +2860,8 @@ function renderStepSelectTheme() {
 function renderClientThemeCard(themeEntry) {
   const selected = !isCustomThemeMode() && themeEntry.id === state.selectedThemeId;
   return `
-    <label class="item-card ${selected ? "selected" : ""}">
-      ${renderMediaCarousel("theme", themeEntry)}
+    <label class="item-card theme-card ${selected ? "selected" : ""}" data-theme-card-id="${escapeAttr(themeEntry.id)}">
+      <div data-theme-media>${renderMediaCarousel("theme", themeEntry)}</div>
       <input type="radio" name="theme" data-theme-id="${escapeAttr(themeEntry.id)}" ${selected ? "checked" : ""} />
       <h4>${escapeHtml(themeEntry.name)}</h4>
       <div class="item-meta">${escapeHtml(themeEntry.description || "")}</div>
@@ -2739,7 +2872,7 @@ function renderClientThemeCard(themeEntry) {
 function renderCustomThemeCard() {
   const selected = isCustomThemeMode();
   return `
-    <label class="item-card ${selected ? "selected" : ""}">
+    <label class="item-card ${selected ? "selected" : ""}" data-theme-card-custom>
       <div class="media-placeholder">Tema</div>
       <input type="radio" name="theme" data-theme-custom="true" ${selected ? "checked" : ""} />
       <h4>Não tem na lista de temas</h4>
@@ -2751,7 +2884,7 @@ function renderCustomThemeCard() {
 function renderStepSelectAddons() {
   const addons = getActiveAddons();
   return `
-    <section class="panel">
+    <section class="panel journey-step-panel" data-journey-step-panel>
       <div class="panel-header"><h3>3. Adicionais</h3><span class="small-note">${addons.length} adicional(is) disponíveis</span></div>
       <div class="panel-body">
         ${addons.length ? `<div class="item-grid">${addons.map(renderClientAddonCard).join("")}</div>` : `<div class="empty-state">Nenhum adicional ativo no momento.</div>`}
@@ -2767,8 +2900,8 @@ function renderStepSelectAddons() {
 function renderClientAddonCard(addonEntry) {
   const selected = state.selectedAdditions.includes(addonEntry.id);
   return `
-    <label class="item-card ${selected ? "selected" : ""}">
-      ${renderMediaCarousel("addon", addonEntry)}
+    <label class="item-card ${selected ? "selected" : ""}" data-addon-card-id="${escapeAttr(addonEntry.id)}">
+      <div data-addon-media>${renderMediaCarousel("addon", addonEntry)}</div>
       <input type="checkbox" data-addition-code="${escapeAttr(addonEntry.id)}" ${selected ? "checked" : ""} />
       <h4>${escapeHtml(addonEntry.name)}</h4>
       <div class="item-meta">${escapeHtml(addonEntry.description || "")}</div>
@@ -2787,7 +2920,7 @@ function renderStepRequestReservation() {
   const lockedReservation = Boolean(reservation && !state.newQuoteMode && (state.user?.role === "client" || adminQuoteMode));
   if ((state.user?.role === "client" || adminQuoteMode) && !state.newQuoteMode && !reservation) {
     return `
-      <section class="panel">
+      <section class="panel journey-step-panel" data-journey-step-panel>
         <div class="panel-header"><h3>4. Solicitar Reserva - Sinal</h3></div>
         <div class="panel-body">
           <div class="empty-state">Não encontramos a proposta selecionada.</div>
@@ -2797,9 +2930,9 @@ function renderStepRequestReservation() {
     `;
   }
   return `
-    <div class="admin-reservations-layout">
+    <div class="admin-reservations-layout journey-step-four-layout ${lockedReservation ? "" : "single-column"}" data-journey-step-panel>
       <section class="panel reservations-list-panel">
-        <div class="panel-header"><h3>4. Solicitar Reserva - Sinal</h3>${statusPill(status)}</div>
+        <div class="panel-header"><h3>4. Solicitar Reserva - Sinal</h3>${journeyStatusPill(status)}</div>
         <div class="panel-body">
           ${lockedReservation ? renderSubmittedReservationView(reservation) : `${renderSelectedItemsPanel(selectedKit)}${renderReservationRequestForm()}`}
           ${
@@ -2809,10 +2942,14 @@ function renderStepRequestReservation() {
           }
         </div>
       </section>
-      <aside class="panel reservation-detail-panel">
-        <div class="panel-header"><h3>Resumo de valores</h3></div>
-        <div class="panel-body">${lockedReservation ? renderReservationValueSummary(reservation) : renderJourneyBudgetSummary()}</div>
-      </aside>
+      ${
+        lockedReservation
+          ? `<aside class="panel reservation-detail-panel">
+              <div class="panel-header"><h3>Resumo de valores</h3></div>
+              <div class="panel-body">${renderReservationValueSummary(reservation)}</div>
+            </aside>`
+          : ""
+      }
     </div>
   `;
 }
@@ -2820,11 +2957,10 @@ function renderStepRequestReservation() {
 function renderLockedReservationActions(reservation) {
   if (isAdminQuoteMode()) {
     const canConfirm = canConfirmDeposit(reservation);
-    const contractReady = Boolean(reservation.contractGeneratedAt);
+    const contractReady = isReservationContractAvailable(reservation);
     return `
       <div class="actions">
         <button class="primary-button" data-admin-journey-confirm-deposit="${escapeAttr(reservation.id)}" ${canConfirm ? pendingDisabledAttr() : 'disabled title="Disponivel somente quando a reserva estiver aguardando confirmacao de sinal."'}>${pendingLabel("confirm-deposit", "Confirmar sinal e reserva", "Confirmando...")}</button>
-        <button class="secondary-button" data-admin-journey-generate-contract="${escapeAttr(reservation.id)}" ${reservation.deposit <= 0 && !contractReady ? "disabled" : pendingDisabledAttr()}>${pendingLabel("generate-contract", "Gerar contrato", "Gerando...")}</button>
         ${contractReady ? `<button class="primary-button" data-next-step="5">Ir para contrato</button>` : ""}
         <button class="secondary-button" data-open-reservation="${escapeAttr(reservation.id)}" data-jump-reservations="true">Abrir em Reservas</button>
         <button class="secondary-button" data-admin-quote-reset>Nova solicitacao</button>
@@ -2847,7 +2983,7 @@ function renderSubmittedReservationView(reservation) {
         <div class="summary-row"><span>Data do evento</span><strong>${dateLabel(reservation.eventDate)}</strong></div>
         <div class="summary-row"><span>Tema</span><strong>${escapeHtml(reservationThemeLabel(reservation))}</strong></div>
         <div class="summary-row"><span>Devolução</span><strong>${dateLabel(reservation.returnDate)}</strong></div>
-        <div class="summary-row"><span>Status</span><strong>${statusPill(reservation.status)}</strong></div>
+        <div class="summary-row"><span>Status</span><strong>${journeyStatusPill(reservation.status)}</strong></div>
         <div class="summary-row"><span>Sinal</span><strong>${money(reservation.signalDue || reservation.total * 0.5)}</strong></div>
         <div class="summary-row"><span>Forma de pagamento</span><strong>${escapeHtml(reservation.paymentMethod || "Pendente")}</strong></div>
         <div class="summary-row"><span>Comprovante</span><strong>${reservation.receiptName ? escapeHtml(reservation.receiptName) : "Não anexado"}</strong></div>
@@ -2886,7 +3022,7 @@ function renderSelectedItemsPanel(selectedKit) {
   const addons = getSelectedItems();
   return `
     <div class="selected-package">
-      <h4>${escapeHtml(selectedKit.name)}</h4>
+      <h4 class="selected-package-title">${escapeHtml(selectedKit.name)}</h4>
       <div class="summary-row"><span>Tema escolhido</span><strong>${escapeHtml(themeSelectionName() || "A definir")}</strong></div>
       <p class="muted">${escapeHtml(selectedKit.itemsText || selectedKit.description || "")}</p>
       ${
@@ -2905,7 +3041,6 @@ function renderReservationRequestForm() {
     <form id="checkoutForm" novalidate>
       ${renderFormAlert()}
       <div class="form-grid">
-        ${renderClientDataReview()}
         <div class="field${fieldErrorClass("eventDate")}">
           <label for="eventDate">Data do evento</label>
           <input id="eventDate" data-draft="eventDate" type="date" min="${minEventDate()}" value="${escapeHtml(d.eventDate || "")}" required />
@@ -2921,8 +3056,9 @@ function renderReservationRequestForm() {
         }
         <div class="field">
           <label for="returnDate">Devolução</label>
-          <input id="returnDate" data-draft="returnDate" type="date" value="${escapeHtml(d.returnDate || "")}" readonly />
+          <input id="returnDate" class="readonly-date" data-draft="returnDate" type="date" value="${escapeHtml(d.returnDate || "")}" readonly disabled aria-disabled="true" />
         </div>
+        ${renderClientDataReview()}
         <div class="field full-span${fieldErrorClass("address")}">
           <label for="address">Endereço do evento</label>
           <textarea id="address" data-draft="address" required readonly>${escapeHtml(d.address)}</textarea>
@@ -2937,6 +3073,7 @@ function renderReservationRequestForm() {
             <label class="choice-option"><input type="checkbox" data-draft-check="returnService" ${d.returnService ? "checked" : ""} /> Devolução ${money(store.serviceFees.returnService)}</label>
           </div>
         </div>
+        ${renderJourneyBudgetSummary()}
         ${renderPaymentMethodSelection(quote)}
         <div class="field full-span">
           <label for="receipt">Anexar comprovante do sinal</label>
@@ -3131,7 +3268,7 @@ function crc16(payload) {
 function renderJourneyBudgetSummary() {
   const quote = calculateQuote();
   return `
-    <div class="summary-list">
+    <div class="summary-list journey-budget-summary full-span">
       <div class="summary-row"><span>Kit</span><strong>${money(quote.kitValue)}</strong></div>
       <div class="summary-row"><span>Adicionais</span><strong>${money(quote.additions)}</strong></div>
       ${quote.delivery ? `<div class="summary-row"><span>Entrega</span><strong>${money(quote.delivery)}</strong></div>` : ""}
@@ -3139,7 +3276,7 @@ function renderJourneyBudgetSummary() {
       ${quote.returnService ? `<div class="summary-row"><span>Devolução</span><strong>${money(quote.returnService)}</strong></div>` : ""}
       <div class="summary-row total"><strong>Valor Total</strong><strong>${money(quote.total)}</strong></div>
       <div class="hint-box">Sinal de ${money(quote.deposit)}. O Ateliê LICA Festas confirma o pagamento do sinal e cria a Reserva e libera o contrato para assinatura.</div>
-      <div>${statusPill("Aguardando confirmação de sinal")}</div>
+      <div>${journeyStatusPill("Aguardando confirmação de sinal")}</div>
     </div>
   `;
 }
@@ -3147,14 +3284,14 @@ function renderJourneyBudgetSummary() {
 function renderStepConfirmReservation() {
   const reservation = getCurrentClientReservation();
   const adminQuoteMode = isAdminQuoteMode();
-  if (!reservation || !reservation.contractGeneratedAt) {
+  if (!reservation || !isReservationContractAvailable(reservation)) {
     return `
       <section class="panel">
         <div class="panel-header"><h3>5. Confirmar Reserva</h3></div>
         <div class="panel-body">
           <div class="empty-state">Assim que o admin confirmar o sinal, o contrato aparece aqui para assinatura.</div>
           <div class="actions">
-            ${adminQuoteMode && reservation ? `<button class="primary-button" data-admin-journey-generate-contract="${escapeAttr(reservation.id)}">Gerar contrato</button>` : `<button class="secondary-button" data-refresh-client-proposal>Atualizar status</button>`}
+            ${adminQuoteMode && reservation ? `<button class="secondary-button" data-open-reservation="${escapeAttr(reservation.id)}" data-jump-reservations="true">Abrir em Reservas</button>` : `<button class="secondary-button" data-refresh-client-proposal>Atualizar status</button>`}
             <button class="secondary-button" data-prev-step="4">Voltar</button>
           </div>
         </div>
@@ -3162,14 +3299,14 @@ function renderStepConfirmReservation() {
     `;
   }
   return `
-    <section class="panel">
+    <section class="panel journey-step-panel" data-journey-step-panel>
       <div class="panel-header"><h3>5. Confirmar Reserva</h3>${statusPill(reservation.status)}</div>
       <div class="panel-body">
         ${renderContractPaper(reservation, !reservation.signature && (state.user?.role === "client" || adminQuoteMode))}
         ${adminQuoteMode ? renderPhysicalContractUpload(reservation) : ""}
         <div class="actions">
           ${state.user?.role === "client" ? `<button class="secondary-button" data-refresh-client-proposal>Atualizar status</button>` : ""}
-          ${reservation.signature ? "" : `<button class="secondary-button" data-action="clear-signature">Limpar assinatura</button><button class="primary-button" data-save-signature="${escapeAttr(reservation.id)}">Confirmar e assinar contrato</button>`}
+          ${reservation.signature ? "" : `<button class="secondary-button" data-action="clear-signature" ${pendingDisabledAttr()}>Limpar assinatura</button><button class="primary-button" data-save-signature="${escapeAttr(reservation.id)}" ${pendingDisabledAttr()}>${pendingLabel("save-signature", "Confirmar e assinar contrato", "Assinando...")}</button>`}
           ${reservation.signature ? `<button class="primary-button" data-next-step="6">Ver entrega e devolução</button>` : ""}
           <button class="secondary-button" data-prev-step="4">Voltar</button>
         </div>
@@ -3182,7 +3319,7 @@ function renderStepDeliveryReturn() {
   const reservation = getCurrentClientReservation();
   if (!reservation) {
     return `
-      <section class="panel">
+      <section class="panel journey-step-panel" data-journey-step-panel>
         <div class="panel-header"><h3>6. Entrega e Devolução do Kit</h3></div>
         <div class="panel-body">
           <div class="empty-state">Depois da assinatura, as informações de entrega e devolução aparecem aqui.</div>
@@ -3190,13 +3327,12 @@ function renderStepDeliveryReturn() {
       </section>
     `;
   }
-  const items = (reservation.itemCodes || []).map(findItem).filter(Boolean);
-  const replacementTotal = items.reduce((sum, entry) => sum + Number(entry.replacement || 0), 0);
   const deliveryMode = reservation.delivery ? "Entrega pelo Ateliê LICA Festas" : "Retirada pelo cliente";
   const returnMode = reservation.returnService ? "Retirada pelo Ateliê LICA Festas" : "Devolução pelo cliente";
   const finance = reservationFinancials(reservation);
+  const clientPending = Math.max(0, finance.balanceDue - finance.additionalPayments);
   return `
-    <section class="panel">
+    <section class="panel journey-step-panel" data-journey-step-panel>
       <div class="panel-header"><h3>6. Entrega e Devolução do Kit</h3>${statusPill(reservation.status)}</div>
       <div class="panel-body">
         <div class="handoff-grid">
@@ -3217,19 +3353,20 @@ function renderStepDeliveryReturn() {
           </article>
         </div>
         <div class="care-box">
+          <h4>Da devolução</h4>
+          <p>A devolução deverá ocorrer até às 18h do dia seguinte ao evento, salvo acordo prévio. Após esse prazo, poderá ser cobrada taxa adicional correspondente a 50% do valor da locação por dia corrido de atraso.</p>
+        </div>
+        <div class="care-box">
           <h4>Conservação dos itens</h4>
-          <p>Guarde as peças em local seco, evite fita adesiva diretamente nos itens, mantenha bandejas e estruturas longe de chuva e calor excessivo, e confira tudo antes da devolução.</p>
-          <div class="summary-row"><span>Itens vinculados</span><strong>${items.length}</strong></div>
-          <div class="summary-row"><span>Referência de reposição em caso de perda/dano</span><strong>${money(replacementTotal)}</strong></div>
-          <div class="small-note">A cobrança final considera apenas itens perdidos, quebrados ou devolvidos com dano identificado na conferência.</div>
+          <p>O cliente deverá manter os itens em local seco e seguro, evitando exposição à chuva, sol excessivo, calor, umidade, fogo, produtos químicos ou fita adesiva diretamente nas peças.</p>
+          <p>Os itens deverão ser devolvidos no mesmo estado em que foram entregues. Em caso de perda, quebra, dano, mancha, rasgo, ausência de itens ou qualquer avaria, poderá ser cobrado o valor de reposição, reparo ou cobrança complementar.</p>
         </div>
         <div class="care-box">
           <h4>Pagamento e conferência</h4>
           <div class="summary-row"><span>Restante do pagamento</span><strong>${money(finance.balanceDue)}</strong></div>
-          <div class="summary-row"><span>Avarias</span><strong>${money(finance.damageFee)}</strong></div>
-          <div class="summary-row"><span>Reposição</span><strong>${money(finance.replacementFee)}</strong></div>
-          <div class="summary-row total"><strong>Total pendente</strong><strong>${money(finance.finalDue)}</strong></div>
-          ${reservation.financeNotes ? `<p>${escapeHtml(reservation.financeNotes)}</p>` : `<div class="small-note">Valores de avarias ou reposição aparecem aqui quando houver conferência do admin.</div>`}
+          <div class="summary-row total"><strong>Total pendente</strong><strong>${money(clientPending)}</strong></div>
+          <div class="small-note">Este valor não inclui valores de avarias ou reposição, esses valores serão avaliados no momento da Devolução/Retirada, conforme contrato.</div>
+          ${reservation.financeNotes ? `<p>${escapeHtml(reservation.financeNotes)}</p>` : ""}
         </div>
         <div class="actions">
           <button class="secondary-button" data-refresh-client-proposal>Atualizar status</button>
@@ -3372,10 +3509,7 @@ function getClientStepForReservation(entry) {
     return 6;
   }
 
-  if (
-    entry.contractGeneratedAt ||
-    ["Reserva confirmada", "Preparar Kit"].includes(entry.status)
-  ) {
+  if (isReservationContractAvailable(entry)) {
     return 5;
   }
 
@@ -3505,6 +3639,7 @@ async function refreshSelectedClientProposal() {
 
   state.clientStep = nextStep;
   state.newQuoteMode = false;
+  requestJourneyStepScroll();
 
   if (nextStep > previousStep) {
     if (nextStep === 5) {
@@ -3533,6 +3668,7 @@ function openClientProposal(id) {
   state.newQuoteMode = false;
   state.tab = "orcamento";
   state.clientStep = getClientStepForReservation(entry);
+  requestJourneyStepScroll();
   render();
 }
 
@@ -3553,6 +3689,7 @@ function startNewClientQuote() {
   state.selectedThemeId = "";
   state.selectedKitId = getActiveKits()[0]?.id || store.kits[0]?.id;
   state.draft = defaultDraft(state.user.clientId);
+  requestJourneyStepScroll();
   render();
 }
 
@@ -3699,6 +3836,17 @@ function cancelAdminQuoteWithPending() {
 
 function isReservationContractSigned(entry) {
   return Boolean(entry?.signature);
+}
+
+function isReservationContractAvailable(entry) {
+  return Boolean(
+    entry &&
+      (
+        entry.contractGeneratedAt ||
+        entry.signature ||
+        ["Reserva confirmada", "Preparar Kit", "Entregue", "Devolução", "Finalizado"].includes(entry.status)
+      )
+  );
 }
 
 function isOpenReservation(entry) {
@@ -3960,7 +4108,7 @@ function legacyRenderClientReservations() {
 }
 
 function legacyRenderClientReservationRow(entry) {
-  const contractButton = entry.contractGeneratedAt
+  const contractButton = isReservationContractAvailable(entry)
     ? `<button class="secondary-button" data-open-contract="${escapeAttr(entry.id)}">${entry.signature ? "Ver contrato" : "Assinar"}</button>`
     : `<span class="muted">Aguardando admin</span>`;
   return `
@@ -4119,9 +4267,9 @@ function renderAdminDashboard() {
         <div class="panel-header"><h3>Contratos e últimas reservas</h3></div>
         <div class="panel-body">
           <div class="summary-list">
-            <div class="summary-row"><span>Gerados</span><strong>${store.reservations.filter((entry) => entry.contractGeneratedAt).length}</strong></div>
+            <div class="summary-row"><span>Disponíveis</span><strong>${store.reservations.filter(isReservationContractAvailable).length}</strong></div>
             <div class="summary-row"><span>Assinados</span><strong>${signed}</strong></div>
-            <div class="summary-row"><span>Aguardando assinatura</span><strong>${store.reservations.filter((entry) => entry.contractGeneratedAt && !entry.signature).length}</strong></div>
+            <div class="summary-row"><span>Aguardando assinatura</span><strong>${store.reservations.filter((entry) => isReservationContractAvailable(entry) && !entry.signature).length}</strong></div>
           </div>
           <div class="mini-list">${recent.map((entry) => `<button class="mini-list-row" data-admin-tab="reservas" data-open-reservation="${escapeAttr(entry.id)}"><span>${escapeHtml(entry.id)} · ${escapeHtml(entry.kitName)}</span>${statusPill(entry.status)}</button>`).join("")}</div>
         </div>
@@ -4463,7 +4611,7 @@ function renderAdminReservations() {
     <section class="section-title">
       <div>
         <h2>Reservas e pagamentos</h2>
-        <p>Confirme o sinal, gere contrato e acompanhe a assinatura digital.</p>
+        <p>Confirme o sinal, acompanhe contratos, pagamentos e assinatura digital.</p>
       </div>
     </section>
     <section class="panel reservations-table-panel">
@@ -4647,8 +4795,8 @@ function renderReservationActionPanel(entry, confirmDepositDisabled) {
       </div>
       <div class="reservation-action-stack">
         <button class="primary-button" data-confirm-deposit="${escapeAttr(entry.id)}" ${confirmDepositDisabled}>${pendingLabel("confirm-deposit", "Confirmar sinal e reserva", "Confirmando...")}</button>
-        <button class="secondary-button" data-generate-contract="${escapeAttr(entry.id)}" ${entry.deposit <= 0 && !entry.contractGeneratedAt ? "disabled" : pendingDisabledAttr()}>${pendingLabel("generate-contract", "Gerar contrato", "Gerando contrato...")}</button>
-        ${entry.contractGeneratedAt ? `<button class="secondary-button" data-open-contract="${escapeAttr(entry.id)}">Ver contrato</button>` : ""}
+        ${isReservationContractAvailable(entry) ? `<button class="secondary-button" data-open-contract="${escapeAttr(entry.id)}">Ver contrato</button>` : `<span class="small-note">Contrato liberado após confirmação do sinal.</span>`}
+        <button class="secondary-button" data-open-checklist="${escapeAttr(entry.id)}">Gerar Check List</button>
         <button class="secondary-button" data-new-payment="${escapeAttr(entry.id)}">Novo pagamento</button>
         <button class="secondary-button" data-save-reservation-status="${escapeAttr(entry.id)}" ${pendingDisabledAttr()}>${pendingLabel("save-status", "Salvar financeiro", "Salvando...")}</button>
         <button class="danger-button" data-cancel-reservation="${escapeAttr(entry.id)}" ${pendingDisabledAttr()}>${pendingLabel("cancel-reservation", "Cancelar reserva", "Cancelando...")}</button>
@@ -4710,8 +4858,9 @@ function renderReservationClosingBlock(entry, finance = reservationFinancials(en
 
 function renderReservationContractBlock(entry) {
   const signature = entry.signature;
+  const contractAvailable = isReservationContractAvailable(entry);
   const signatureType = signature?.type === "physical" ? "Físico anexado" : signature ? "Digital" : "Pendente";
-  const signatureStatus = signature ? "Contrato assinado" : entry.contractGeneratedAt ? "Aguardando assinatura" : "Contrato ainda não gerado";
+  const signatureStatus = signature ? "Contrato assinado" : contractAvailable ? "Aguardando assinatura" : "Contrato liberado após confirmação do sinal";
   return `
     <section class="reservation-info-card">
       <div class="reservation-card-heading">
@@ -4722,14 +4871,14 @@ function renderReservationContractBlock(entry) {
         <span class="status-pill ${signature ? "signed" : "pending"}">${escapeHtml(signatureType)}</span>
       </div>
       <div class="reservation-info-grid">
-        ${detail("Gerado em", dateTimeLabel(entry.contractGeneratedAt) || "Não gerado")}
+        ${detail("Disponível em", dateTimeLabel(entry.contractGeneratedAt) || (contractAvailable ? "Liberado após confirmação do sinal" : "Aguardando confirmação do sinal"))}
         ${detail("Status da assinatura", signature ? "Assinado" : "Pendente")}
         ${detail("Tipo de assinatura", signatureType)}
         ${detail("Assinante", escapeHtml(signature?.signer || "Aguardando assinatura"))}
         ${detail("Assinado em", dateTimeLabel(signature?.signedAt) || "Aguardando assinatura")}
       </div>
       ${signature ? renderSignatureEvidence(entry) : ""}
-      ${entry.contractGeneratedAt ? renderPhysicalContractUpload(entry) : `<div class="hint-box">Gere o contrato para liberar assinatura digital ou anexo físico.</div>`}
+      ${contractAvailable ? renderPhysicalContractUpload(entry) : `<div class="hint-box">Confirme o sinal para liberar assinatura digital ou anexo físico.</div>`}
     </section>
   `;
 }
@@ -5222,6 +5371,53 @@ function renderAdminInventory() {
   `;
 }
 
+function contractObjectText(entry) {
+  const theme = reservationThemeLabel(entry);
+  const deliveryLabel = dateLabel(entry.deliveryDate);
+  const returnLabel = dateLabel(entry.returnDate);
+  return `Locação do ${entry.kitName}, tema ${theme}, para evento em ${dateLabel(entry.eventDate)}, com retirada/entrega em ${deliveryLabel} e devolução prevista para ${returnLabel}, até às 18h.`;
+}
+
+function renderContractValues(entry) {
+  const finance = reservationFinancials(entry);
+  const discount = financialNumber(entry.discount);
+  return `
+    <section class="contract-section contract-values">
+      <h4>Valores e pagamento</h4>
+      <div class="contract-value-list">
+        <div><span>Valor do kit</span><strong>${money(entry.kitValue)}</strong></div>
+        <div><span>Adicionais</span><strong>${money(entry.additionalValue || 0)}</strong></div>
+        <div><span>Serviços</span><strong>${money(entry.serviceFee)}</strong></div>
+        ${discount > 0 ? `<div><span>Desconto</span><strong>${money(discount)}</strong></div>` : ""}
+        <div class="contract-value-total"><span>Valor total</span><strong>${money(entry.total)}</strong></div>
+        <div><span>Sinal pago</span><strong>${money(entry.deposit)}</strong></div>
+        <div class="contract-value-pending"><span>Valor pendente</span><strong>${money(finance.finalDue)}</strong></div>
+      </div>
+    </section>
+  `;
+}
+
+function renderContractPaymentSignal(entry) {
+  return `
+    <p><strong>Pagamento do sinal:</strong> ${escapeHtml(entry.paymentMethod)}. Dados PIX: ${escapeHtml(store.company.pixName)}, ${escapeHtml(store.company.pixBank)}, chave ${escapeHtml(store.company.pixKey)}.</p>
+  `;
+}
+
+function renderContractGeneralConditions() {
+  return `
+    <section class="contract-section contract-conditions">
+      <h4>Condições gerais</h4>
+      <ol>
+        <li>O valor pago para reserva não será devolvido em caso de desistência, podendo o cliente reagendar a locação em até 90 dias após a data do pagamento, conforme disponibilidade de agenda e materiais. Qualquer alteração de data, horário, tema, kit ou endereço ficará sujeita à disponibilidade da contratada. O valor pendente deverá ser quitado na retirada dos materiais ou no ato da entrega, quando esse serviço for contratado.</li>
+        <li>A retirada e a devolução dos itens são de responsabilidade do cliente quando não contratados os serviços de entrega e/ou recolhimento. Caso utilize transporte por aplicativo, a solicitação e o pagamento da corrida são de responsabilidade do cliente. Havendo erro no endereço informado, ausência do cliente no local combinado ou necessidade de novo deslocamento, poderá ser cobrada taxa adicional. O cliente deverá conferir os itens no ato da retirada ou recebimento. A responsabilidade pelos materiais passa a ser do cliente a partir da retirada ou entrega, permanecendo até a devolução e conferência pela contratada.</li>
+        <li>Os itens deverão ser utilizados apenas para a finalidade contratada e devolvidos no mesmo estado em que foram entregues. É proibida a exposição dos materiais à chuva, sol excessivo, umidade, fogo, produtos químicos ou qualquer condição que possa causar dano. O cliente não poderá emprestar, ceder, sublocar ou transferir os itens a terceiros sem autorização prévia.</li>
+        <li>Em caso de perda, quebra, dano, mancha, rasgo, ausência de itens ou qualquer avaria, o cliente será responsável pelo pagamento do valor de reposição, reparo ou cobrança complementar. A devolução deverá ocorrer até às 18h do dia seguinte ao evento. Após esse prazo, será cobrada taxa adicional de 50% do valor da locação por dia corrido de atraso.</li>
+        <li>A contratada não se responsabiliza por prejuízos decorrentes de mau uso dos itens, condições climáticas, caso fortuito, força maior ou situações externas ao serviço contratado. Ao assinar, o cliente declara estar ciente e de acordo com todos os termos, valores, prazos e responsabilidades descritos neste contrato. Em caso de dúvidas, permanecemos à disposição.</li>
+      </ol>
+    </section>
+  `;
+}
+
 function renderContractPaper(entry, canSign) {
   const client = store.clients.find((row) => row.id === entry.clientId);
   return `
@@ -5229,12 +5425,12 @@ function renderContractPaper(entry, canSign) {
       <h3>Contrato de locação de kit festa</h3>
       <p><strong>Contratante:</strong> ${escapeHtml(client?.name || "")}, CPF ${escapeHtml(client?.cpf || "")}, telefone ${escapeHtml(client?.phone || "")}.</p>
       <p><strong>Contratada:</strong> ${escapeHtml(store.company.name)}, representada por ${escapeHtml(store.company.pixName)}.</p>
-      <p><strong>Objeto:</strong> locação do ${escapeHtml(entry.kitName)}, tema ${escapeHtml(reservationThemeLabel(entry))}, para o evento em ${dateLabel(entry.eventDate)}, com devolução em ${dateLabel(entry.returnDate)}.</p>
+      <p><strong>Objeto:</strong> ${escapeHtml(contractObjectText(entry))}</p>
       <p><strong>Itens locados:</strong></p>
       ${renderReservationItemSections(entry)}
-      <p><strong>Valores:</strong> kit ${money(entry.kitValue)}, adicionais ${money(entry.additionalValue || 0)}, serviços ${money(entry.serviceFee)}, sinal ${money(entry.deposit)}, valor total ${money(entry.total)}.</p>
-      <p><strong>Pagamento do sinal:</strong> ${escapeHtml(entry.paymentMethod)}. Dados PIX: ${escapeHtml(store.company.pixName)}, ${escapeHtml(store.company.pixBank)}, chave ${escapeHtml(store.company.pixKey)}.</p>
-      <p><strong>Responsabilidade:</strong> o cliente se compromete a devolver os itens no prazo e no mesmo estado de conservação. Danos, perdas ou atrasos podem gerar cobrança conforme valor de reposição.</p>
+      ${renderContractValues(entry)}
+      ${renderContractPaymentSignal(entry)}
+      ${renderContractGeneralConditions()}
       <p><strong>Assinatura digital:</strong> a assinatura abaixo registra aceite dos termos deste contrato.</p>
       ${renderContractSignatureBlock(entry, canSign)}
     </article>
@@ -5295,12 +5491,13 @@ function renderModal() {
   if (state.modal.type === "receipt") return renderReceiptModal();
   if (state.modal.type === "payment") return renderPaymentModal();
   if (state.modal.type === "payment-method") return renderPaymentMethodModal();
+  if (state.modal.type === "checklist") return renderChecklistModal();
   if (state.modal.type !== "contract") return "";
 
   const entry = store.reservations.find((row) => row.id === state.modal.id);
   if (!entry) return "";
   const client = store.clients.find((row) => row.id === entry.clientId);
-  const canSign = state.user.role === "client" && entry.contractGeneratedAt && !entry.signature;
+  const canSign = state.user.role === "client" && isReservationContractAvailable(entry) && !entry.signature;
   return `
     <div class="modal-backdrop">
       <section class="modal">
@@ -5312,26 +5509,245 @@ function renderModal() {
           <button class="ghost-button" data-action="close-modal">Fechar</button>
         </div>
         <div class="modal-content">
-          <article class="contract-paper">
-            <h3>Contrato de locação de kit festa</h3>
-            <p><strong>Contratante:</strong> ${escapeHtml(client?.name || "")}, CPF ${escapeHtml(client?.cpf || "")}, telefone ${escapeHtml(client?.phone || "")}.</p>
-            <p><strong>Contratada:</strong> ${escapeHtml(store.company.name)}, representada por ${escapeHtml(store.company.pixName)}.</p>
-            <p><strong>Objeto:</strong> locação do ${escapeHtml(entry.kitName)} para o evento em ${dateLabel(entry.eventDate)}, com retirada/entrega em ${dateLabel(entry.deliveryDate)} e devolução em ${dateLabel(entry.returnDate)}.</p>
-            <p><strong>Itens locados:</strong></p>
-            ${renderReservationItemSections(entry)}
-            <p><strong>Valores:</strong> kit fechado ${money(entry.kitValue)}, adicionais ${money(entry.additionalValue || 0)}, desconto ${money(entry.discount)}, serviços ${money(entry.serviceFee)}, sinal pago ${money(entry.deposit)}, total previsto ${money(entry.total)}.</p>
-            <p><strong>Pagamento do sinal:</strong> ${escapeHtml(entry.paymentMethod)}. Dados PIX: ${escapeHtml(store.company.pixName)}, ${escapeHtml(store.company.pixBank)}, chave ${escapeHtml(store.company.pixKey)}.</p>
-            <p><strong>Responsabilidade:</strong> o cliente se compromete a devolver os itens no prazo e no mesmo estado de conservação. Danos, perdas ou atrasos podem gerar cobrança conforme valor de reposição.</p>
-            <p><strong>Assinatura digital:</strong> a assinatura abaixo registra aceite dos termos deste contrato.</p>
-            ${renderContractSignatureBlock(entry, canSign)}
-          </article>
+          ${renderContractPaper(entry, canSign)}
           <div class="actions">
-            ${canSign ? `<button class="secondary-button" data-action="clear-signature">Limpar assinatura</button><button class="primary-button" data-save-signature="${escapeAttr(entry.id)}">Salvar assinatura</button>` : ""}
+            ${canSign ? `<button class="secondary-button" data-action="clear-signature" ${pendingDisabledAttr()}>Limpar assinatura</button><button class="primary-button" data-save-signature="${escapeAttr(entry.id)}" ${pendingDisabledAttr()}>${pendingLabel("save-signature", "Salvar assinatura", "Assinando...")}</button>` : ""}
             <button class="secondary-button" data-action="print-contract">Imprimir contrato</button>
           </div>
         </div>
       </section>
     </div>
+  `;
+}
+
+function renderChecklistModal() {
+  const entry = store.reservations.find((row) => row.id === state.modal.id);
+  if (!entry) return "";
+  return `
+    <div class="modal-backdrop">
+      <section class="modal checklist-modal">
+        <div class="modal-title no-print">
+          <div>
+            <h2>Checklist ${escapeHtml(entry.id)}</h2>
+            <p>${escapeHtml(clientName(entry.clientId))} · ${escapeHtml(entry.kitName)} · ${dateLabel(entry.eventDate)}</p>
+          </div>
+          <button class="ghost-button" data-action="close-modal">Fechar</button>
+        </div>
+        <div class="modal-content checklist-modal-content">
+          ${renderReservationChecklist(entry)}
+          <div class="actions checklist-print-actions">
+            <button class="primary-button" data-action="print-checklist">Imprimir / salvar PDF</button>
+            <button class="secondary-button" data-action="close-modal">Fechar</button>
+          </div>
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+function renderReservationChecklist(entry) {
+  const client = store.clients.find((row) => row.id === entry.clientId);
+  const finance = reservationFinancials(entry);
+  const paidTotal = financialNumber(entry.deposit) + reservationAdditionalPaymentsTotal(entry);
+  const pendingWithoutExtras = Math.max(0, financialNumber(entry.total) - paidTotal);
+  const itemRows = checklistItemRows(entry);
+  const totalItems = itemRows.reduce((sum, row) => sum + row.quantity, 0);
+  const replacementTotal = itemRows.reduce((sum, row) => sum + row.totalReplacement, 0);
+  const deliveryChecked = entry.delivery ? "☑" : "☐";
+  const pickupChecked = entry.delivery ? "☐" : "☑";
+  const returnServiceChecked = entry.returnService ? "☑" : "☐";
+  const clientReturnChecked = entry.returnService ? "☐" : "☑";
+  const complementaryTotal = financialNumber(finance.damageFee) + financialNumber(finance.replacementFee);
+
+  return `
+    <article class="checklist-paper">
+      <header class="checklist-header">
+        <div>
+          <span>Ateliê LICA Festas</span>
+          <h3>Checklist de Entrega/Retirada e Devolução/Busca</h3>
+        </div>
+        <strong>${escapeHtml(entry.id)}</strong>
+      </header>
+
+      <section class="checklist-section">
+        <h4>1. Dados da reserva</h4>
+        <div class="checklist-data-grid">
+          ${checklistDetail("Reserva", entry.id)}
+          ${checklistDetail("Cliente", client?.name || clientName(entry.clientId))}
+          ${checklistDetail("CPF", client?.cpf || "")}
+          ${checklistDetail("Telefone/WhatsApp", client?.whatsapp || client?.phone || "")}
+          ${checklistDetail("Kit/Tema", `${entry.kitName} · ${reservationThemeLabel(entry)}`)}
+          ${checklistDetail("Data do evento", dateLabel(entry.eventDate))}
+          ${checklistDetail("Valor total", money(entry.total))}
+          ${checklistDetail("Valor pago", money(paidTotal))}
+          ${checklistDetail("Valor pendente", money(pendingWithoutExtras))}
+        </div>
+        <p class="checklist-note">Observação: O valor pendente deverá ser quitado no ato da retirada dos materiais ou, quando houver entrega contratada, no momento da entrega ao cliente.</p>
+      </section>
+
+      <section class="checklist-section">
+        <h4>2. Entrega ou retirada dos materiais</h4>
+        <div class="checklist-choice-line">
+          <span>Tipo:</span>
+          <strong>${pickupChecked} Retirada pelo cliente</strong>
+          <strong>${deliveryChecked} Entrega pelo Ateliê LICA Festas</strong>
+          <strong>☐ Transporte por aplicativo solicitado pelo cliente</strong>
+        </div>
+        <div class="checklist-fill-grid">
+          ${checklistBlank("Data", dateLabel(entry.deliveryDate))}
+          ${checklistBlank("Horário")}
+          ${checklistBlank("Responsável pelo recebimento", "", "wide")}
+        </div>
+        <h5>Conferência na entrega/retirada</h5>
+        <div class="checklist-check-grid">
+          ${checkItem("Cliente conferiu os itens recebidos")}
+          ${checkItem("Itens entregues/retirados em bom estado")}
+          ${checkItem("Valor pendente quitado, se houver")}
+          ${checkItem("Cliente orientado sobre conservação dos itens")}
+          ${checkItem("Cliente ciente do prazo de devolução")}
+        </div>
+        ${checklistTextarea("Observações na entrega/retirada")}
+      </section>
+
+      <section class="checklist-section checklist-items-section">
+        <h4>3. Lista de itens locados e valores de reposição</h4>
+        <div class="checklist-table-wrap">
+          <table class="checklist-items-table">
+            <thead>
+              <tr>
+                <th>Código</th>
+                <th>Item</th>
+                <th>Qtd.</th>
+                <th>Reposição unitária</th>
+                <th>Reposição total</th>
+                <th>Estado na entrega</th>
+                <th>Estado na devolução</th>
+                <th>Observações</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemRows.length ? itemRows.map(renderChecklistItemRow).join("") : `<tr><td colspan="8">Nenhum item vinculado à reserva.</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+        <div class="checklist-total-row">
+          <strong>Total de itens vinculados: ${totalItems}</strong>
+          <strong>Valor total de referência para reposição: ${money(replacementTotal)}</strong>
+        </div>
+      </section>
+
+      <section class="checklist-section">
+        <h4>4. Cuidados com os materiais</h4>
+        <p>O cliente deverá manter os itens em local seco e seguro, evitando chuva, sol excessivo, calor, umidade, fogo, produtos químicos ou fita adesiva diretamente nas peças.</p>
+        <p>Os itens deverão ser devolvidos no mesmo estado em que foram entregues.</p>
+      </section>
+
+      <section class="checklist-section">
+        <h4>5. Devolução ou busca dos materiais</h4>
+        <div class="checklist-choice-line">
+          <span>Tipo:</span>
+          <strong>${clientReturnChecked} Devolução pelo cliente</strong>
+          <strong>${returnServiceChecked} Busca pelo Ateliê LICA Festas</strong>
+          <strong>☐ Transporte por aplicativo solicitado pelo cliente</strong>
+        </div>
+        <div class="checklist-fill-grid">
+          ${checklistBlank("Data prevista", dateLabel(entry.returnDate))}
+          ${checklistBlank("Horário limite", "até 18h")}
+          ${checklistBlank("Data efetiva da devolução/busca")}
+          ${checklistBlank("Horário")}
+          ${checklistBlank("Responsável pela devolução", "", "wide")}
+        </div>
+        <h5>Conferência na devolução/busca</h5>
+        <div class="checklist-check-grid">
+          ${checkItem("Todos os itens foram devolvidos")}
+          ${checkItem("Itens devolvidos em bom estado")}
+          ${checkItem("Houve atraso na devolução")}
+          ${checkItem("Houve item ausente")}
+          ${checkItem("Houve avaria/dano identificado")}
+          ${checkItem("Houve necessidade de cobrança complementar")}
+        </div>
+      </section>
+
+      <section class="checklist-section">
+        <h4>6. Avarias, perdas e reposição</h4>
+        <p>Caso sejam identificados danos, quebras, manchas, rasgos, ausência de itens ou qualquer avaria, o cliente será responsável pelo pagamento do valor de reparo, reposição ou cobrança complementar.</p>
+        <p>A cobrança será calculada com base nos itens afetados, considerando o valor de reposição individual informado na lista de itens locados.</p>
+        <div class="checklist-data-grid">
+          ${checklistDetail("Avarias identificadas", money(finance.damageFee))}
+          ${checklistDetail("Reposição de itens", money(finance.replacementFee))}
+          ${checklistDetail("Taxa por atraso", "R$ __________")}
+          ${checklistDetail("Total complementar a pagar", money(complementaryTotal))}
+        </div>
+        ${checklistTextarea("Descrição das avarias/perdas")}
+      </section>
+
+      <section class="checklist-section">
+        <h4>7. Confirmação</h4>
+        <p>Declaro que recebi, conferi e estou ciente das condições de uso, conservação, devolução e responsabilidade pelos itens locados, incluindo os valores de reposição informados neste checklist.</p>
+        <div class="checklist-signatures">
+          <span>Assinatura do cliente: ___________________________________</span>
+          <span>Assinatura do Ateliê LICA Festas: _________________________</span>
+          <span>Data: ____/____/______</span>
+        </div>
+      </section>
+    </article>
+  `;
+}
+
+function checklistDetail(label, value) {
+  return `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value || "-")}</strong></div>`;
+}
+
+function checklistBlank(label, value = "", className = "") {
+  return `<div class="${className}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value || "________________")}</strong></div>`;
+}
+
+function checkItem(label) {
+  return `<span>☐ ${escapeHtml(label)}</span>`;
+}
+
+function checklistTextarea(label) {
+  return `
+    <div class="checklist-textarea">
+      <strong>${escapeHtml(label)}:</strong>
+      <span></span>
+      <span></span>
+      <span></span>
+    </div>
+  `;
+}
+
+function checklistItemRows(entry) {
+  const counts = new Map();
+  (entry.itemCodes || []).forEach((code) => {
+    counts.set(code, (counts.get(code) || 0) + 1);
+  });
+
+  return [...counts.entries()].map(([code, quantity]) => {
+    const itemEntry = findItem(code);
+    const unitReplacement = financialNumber(itemEntry?.replacement);
+    return {
+      code,
+      name: itemEntry?.name || "Item não encontrado",
+      quantity,
+      unitReplacement,
+      totalReplacement: quantity * unitReplacement,
+    };
+  });
+}
+
+function renderChecklistItemRow(row) {
+  return `
+    <tr>
+      <td>${escapeHtml(row.code)}</td>
+      <td>${escapeHtml(row.name)}</td>
+      <td>${row.quantity}</td>
+      <td>${money(row.unitReplacement)}</td>
+      <td>${money(row.totalReplacement)}</td>
+      <td>☐ OK ☐ Obs.</td>
+      <td>☐ OK ☐ Avaria ☐ Ausente</td>
+      <td></td>
+    </tr>
   `;
 }
 
@@ -6105,7 +6521,7 @@ async function submitQuote() {
     if (!confirm(message)) {
       state.selectedReservationId = duplicate.id;
       state.newQuoteMode = false;
-      state.clientStep = duplicate.signature ? 6 : duplicate.contractGeneratedAt ? 5 : 4;
+      state.clientStep = duplicate.signature ? 6 : isReservationContractAvailable(duplicate) ? 5 : 4;
       showToast(`Já existe uma reserva aberta para este cliente, kit e data: ${duplicate.id}. Nenhuma nova reserva foi criada.`, "warning");
       return false;
     }
@@ -6273,20 +6689,6 @@ async function confirmDeposit(id, values = readAdminReservationFieldValues()) {
   entry.status = "Reserva confirmada";
   entry.contractGeneratedAt = entry.contractGeneratedAt || new Date().toISOString();
   saveStore();
-}
-
-async function generateContract(id) {
-  if (await syncReservationActionWithApi(id, "generate-contract")) {
-    state.modal = { type: "contract", id };
-    return;
-  }
-
-  const entry = store.reservations.find((row) => row.id === id);
-  if (!entry) return;
-  entry.contractGeneratedAt = new Date().toISOString();
-  if (!entry.status.includes("confirmada")) entry.status = "Reserva confirmada";
-  saveStore();
-  state.modal = { type: "contract", id };
 }
 
 async function cancelReservation(id) {
@@ -6699,6 +7101,10 @@ function statusPill(status) {
   return `<span class="status-pill ${className}">${escapeHtml(status)}</span>`;
 }
 
+function journeyStatusPill(status) {
+  return `<span class="journey-status">${statusPill(status)}</span>`;
+}
+
 function formatItemLine(entry) {
   if (!entry) return "";
   return `${entry.codigo} - ${entry.name} - ${entry.category} - ${entry.theme}`;
@@ -6864,7 +7270,54 @@ document.addEventListener("submit", async (event) => {
   }
 });
 
+document.addEventListener(
+  "click",
+  (event) => {
+    const selectionMedia = event.target.closest("[data-theme-media], [data-addon-media]");
+    if (selectionMedia && !event.target.closest("button")) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  },
+  true,
+);
+
 document.addEventListener("click", async (event) => {
+  const clickedThemeCard = event.target.closest("[data-theme-card-id], [data-theme-card-custom]");
+  if (clickedThemeCard && !event.target.closest("[data-theme-media]") && !event.target.closest("button")) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (clickedThemeCard.dataset.themeCardId) {
+      state.selectedThemeId = clickedThemeCard.dataset.themeCardId;
+      state.draft.customTheme = "";
+      state.draft.customThemeMode = false;
+    } else {
+      state.selectedThemeId = "";
+      state.draft.customThemeMode = true;
+    }
+    render();
+    return;
+  }
+
+  const clickedAddonCard = event.target.closest("[data-addon-card-id]");
+  if (
+    clickedAddonCard &&
+    !event.target.closest("[data-addon-media]") &&
+    !event.target.closest("button") &&
+    !event.target.closest("[data-addition-code]")
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+    const addonId = clickedAddonCard.dataset.addonCardId;
+    if (state.selectedAdditions.includes(addonId)) {
+      state.selectedAdditions = state.selectedAdditions.filter((entry) => entry !== addonId);
+    } else {
+      state.selectedAdditions.push(addonId);
+    }
+    render();
+    return;
+  }
+
   const target = event.target.closest("button");
   if (!target) return;
 
@@ -6983,19 +7436,24 @@ document.addEventListener("click", async (event) => {
     state.modal = { type: "theme" };
     render();
   }
-  if (target.dataset.action === "print-contract") window.print();
+  if (target.dataset.action === "print-contract" || target.dataset.action === "print-checklist") window.print();
   if (target.dataset.action === "clear-signature") clearSignaturePad();
   if (target.dataset.adminTab) {
-    await refreshStoreForActiveSession();
-    state.adminTab = target.dataset.adminTab;
+    const nextAdminTab = target.dataset.adminTab;
+    await runNavigationLoading(`Abrindo ${adminTabLabel(nextAdminTab)} e atualizando dados do portal.`, async () => {
+      await refreshStoreForActiveSession();
+      state.adminTab = nextAdminTab;
+    });
     if (!target.dataset.openReservation && !target.dataset.openFinance) {
-      render();
       return;
     }
   }
   if (target.dataset.viewClientProposal) {
-    await refreshStoreForActiveSession();
-    openClientProposal(target.dataset.viewClientProposal);
+    const proposalId = target.dataset.viewClientProposal;
+    await runNavigationLoading("Abrindo proposta e conferindo dados atualizados.", async () => {
+      await refreshStoreForActiveSession();
+      openClientProposal(proposalId);
+    });
     return;
   }
   if (target.dataset.refreshClientProposal !== undefined) {
@@ -7003,18 +7461,23 @@ document.addEventListener("click", async (event) => {
     return;
   }
   if (target.dataset.startClientQuote !== undefined) {
-    await refreshStoreForActiveSession();
-    startNewClientQuote();
+    await runNavigationLoading("Abrindo novo orçamento e conferindo pendências.", async () => {
+      await refreshStoreForActiveSession();
+      startNewClientQuote();
+    });
     return;
   }
   if (target.dataset.clientTab) {
-    await refreshStoreForActiveSession();
-    if (state.user?.role === "client" && target.dataset.clientTab === "orcamento") {
-      startNewClientQuote();
-      return;
-    }
-    state.tab = target.dataset.clientTab;
-    render();
+    const nextClientTab = target.dataset.clientTab;
+    await runNavigationLoading(`Abrindo ${clientTabLabel(nextClientTab)} e atualizando dados.`, async () => {
+      await refreshStoreForActiveSession();
+      if (state.user?.role === "client" && nextClientTab === "orcamento") {
+        startNewClientQuote();
+        return;
+      }
+      state.tab = nextClientTab;
+    });
+    return;
   }
   if (target.dataset.clientStep) {
     goToClientStep(target.dataset.clientStep);
@@ -7076,6 +7539,11 @@ document.addEventListener("click", async (event) => {
     render();
     return;
   }
+  if (target.dataset.openChecklist) {
+    state.modal = { type: "checklist", id: target.dataset.openChecklist };
+    render();
+    return;
+  }
   if (target.dataset.editPaymentMethod) {
     clearFormState();
     state.editingPaymentMethodId = target.dataset.editPaymentMethod;
@@ -7107,17 +7575,6 @@ document.addEventListener("click", async (event) => {
     }, "Sinal confirmado e contrato liberado com sucesso.");
     return;
   }
-  if (target.dataset.adminJourneyGenerateContract) {
-    const id = target.dataset.adminJourneyGenerateContract;
-    await runAction("generate-contract", async () => {
-      await generateContract(id);
-      state.modal = null;
-      state.selectedReservationId = id;
-      state.clientStep = 5;
-      state.newQuoteMode = false;
-    }, "Contrato gerado com sucesso.");
-    return;
-  }
   if (target.dataset.confirmDeposit) {
     const values = readAdminReservationFieldValues();
     await runAction("confirm-deposit", () => confirmDeposit(target.dataset.confirmDeposit, values), "Sinal confirmado e reserva liberada com sucesso.");
@@ -7131,10 +7588,6 @@ document.addEventListener("click", async (event) => {
   if (target.dataset.saveFinance) {
     const values = readFinanceFieldValues();
     await runAction("save-reservation-finance", () => saveFinanceFields(target.dataset.saveFinance, values), "Dados financeiros salvos com sucesso.");
-    return;
-  }
-  if (target.dataset.generateContract) {
-    await runAction("generate-contract", () => generateContract(target.dataset.generateContract), "Contrato gerado com sucesso.");
     return;
   }
   if (target.dataset.cancelReservation) {
@@ -7277,13 +7730,7 @@ document.addEventListener("click", async (event) => {
     render();
   }
   if (target.dataset.saveSignature) {
-    try {
-      await saveSignature(target.dataset.saveSignature);
-    } catch (error) {
-      console.error(error);
-      showToast(error?.userMessage || "Nao foi possivel salvar a assinatura.", "error");
-      render();
-    }
+    await runAction("save-signature", () => saveSignature(target.dataset.saveSignature), "");
     return;
   }
 });

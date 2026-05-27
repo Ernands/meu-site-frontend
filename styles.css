@@ -213,6 +213,12 @@ button:disabled {
   color: #98a2b3;
 }
 
+.field input.readonly-date:disabled {
+  color: var(--ink);
+  opacity: 1;
+  -webkit-text-fill-color: var(--ink);
+}
+
 .form-alert {
   border-radius: 8px;
   padding: 12px;
@@ -570,6 +576,51 @@ button:disabled {
   }
 }
 
+.navigation-loading {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(44, 58, 71, 0.18);
+  backdrop-filter: blur(4px);
+}
+
+.navigation-loading-card {
+  width: min(360px, 100%);
+  padding: 26px 24px;
+  border: 1px solid rgba(216, 190, 150, 0.36);
+  border-radius: 24px;
+  background: rgba(255, 253, 249, 0.96);
+  box-shadow: var(--shadow);
+  text-align: center;
+}
+
+.navigation-spinner {
+  display: inline-block;
+  width: 34px;
+  height: 34px;
+  margin-bottom: 14px;
+  border: 3px solid rgba(44, 58, 71, 0.16);
+  border-top-color: var(--rose);
+  border-radius: 999px;
+  animation: spin 0.8s linear infinite;
+}
+
+.navigation-loading-card strong {
+  display: block;
+  color: var(--navy);
+  font-family: var(--font-title);
+  font-size: 1.65rem;
+}
+
+.navigation-loading-card p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
 .main {
   width: min(1320px, calc(100% - 32px));
   margin: 0 auto;
@@ -667,7 +718,18 @@ button:disabled {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
+  cursor: pointer;
   padding: 12px;
+}
+
+.theme-card [data-theme-media],
+[data-addon-media] {
+  cursor: default;
+}
+
+.theme-card [data-theme-media] button,
+[data-addon-media] button {
+  cursor: pointer;
 }
 
 .kit-card.selected,
@@ -950,6 +1012,14 @@ button:disabled {
   gap: 12px;
 }
 
+.journey-budget-summary {
+  border: 1px solid rgba(44, 58, 71, 0.12);
+  border-radius: var(--radius-md);
+  background: rgba(255, 253, 249, 0.92);
+  box-shadow: var(--shadow-soft);
+  padding: 16px;
+}
+
 .summary-row {
   display: flex;
   justify-content: space-between;
@@ -969,6 +1039,19 @@ button:disabled {
 .summary-row.total strong:last-child {
   color: var(--teal);
   font-size: 1.55rem;
+}
+
+.selected-package-title {
+  color: var(--navy);
+  font-family: var(--font-title);
+  font-size: 1.7rem;
+  font-weight: 800;
+}
+
+.journey-status .status-pill {
+  border-color: var(--navy);
+  background: var(--navy);
+  color: #fffdf9;
 }
 
 .form-grid {
@@ -1203,6 +1286,249 @@ th {
   margin: 0 0 10px;
 }
 
+.contract-section {
+  margin: 18px 0;
+}
+
+.contract-section h4 {
+  margin: 0 0 10px;
+  color: var(--navy);
+  font-family: var(--font-title);
+  font-size: 1.35rem;
+}
+
+.contract-value-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid rgba(44, 58, 71, 0.12);
+  border-radius: 16px;
+  background: rgba(247, 242, 236, 0.62);
+}
+
+.contract-value-list div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(44, 58, 71, 0.08);
+}
+
+.contract-value-list span {
+  color: var(--muted);
+}
+
+.contract-value-list strong {
+  color: var(--navy);
+  white-space: nowrap;
+}
+
+.contract-value-total,
+.contract-value-pending {
+  grid-column: 1 / -1;
+}
+
+.contract-value-total strong {
+  color: var(--rose);
+  font-size: 1.08rem;
+}
+
+.contract-value-pending strong {
+  color: var(--ink);
+}
+
+.contract-conditions ol {
+  margin: 0;
+  padding-left: 22px;
+}
+
+.contract-conditions li + li {
+  margin-top: 10px;
+}
+
+.checklist-modal {
+  width: min(1180px, 100%);
+}
+
+.checklist-modal-content {
+  display: grid;
+  gap: 18px;
+}
+
+.checklist-paper {
+  border: 1px solid rgba(44, 58, 71, 0.14);
+  border-radius: 22px;
+  background: #fffdf9;
+  color: var(--ink);
+  padding: 26px;
+}
+
+.checklist-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  border-bottom: 2px solid rgba(201, 123, 139, 0.24);
+  padding-bottom: 16px;
+}
+
+.checklist-header span,
+.checklist-section h5 {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.checklist-header h3 {
+  margin: 4px 0 0;
+  font-size: clamp(1.7rem, 3vw, 2.5rem);
+}
+
+.checklist-header > strong {
+  border: 1px solid rgba(44, 58, 71, 0.14);
+  border-radius: 999px;
+  background: rgba(247, 242, 236, 0.78);
+  padding: 9px 14px;
+  color: var(--navy);
+}
+
+.checklist-section {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px dashed rgba(44, 58, 71, 0.18);
+}
+
+.checklist-section:first-of-type {
+  border-top: 0;
+}
+
+.checklist-section h4 {
+  margin: 0 0 12px;
+  font-family: var(--font-title);
+  font-size: 1.35rem;
+}
+
+.checklist-section h5 {
+  margin: 16px 0 8px;
+}
+
+.checklist-data-grid,
+.checklist-fill-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.checklist-data-grid div,
+.checklist-fill-grid div {
+  min-width: 0;
+  border: 1px solid rgba(44, 58, 71, 0.1);
+  border-radius: 14px;
+  background: rgba(247, 242, 236, 0.46);
+  padding: 10px 12px;
+}
+
+.checklist-data-grid span,
+.checklist-fill-grid span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.checklist-data-grid strong,
+.checklist-fill-grid strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--navy);
+  overflow-wrap: anywhere;
+}
+
+.checklist-fill-grid .wide {
+  grid-column: 1 / -1;
+}
+
+.checklist-note {
+  border-left: 3px solid var(--champagne);
+  background: rgba(216, 190, 150, 0.12);
+  padding: 10px 12px;
+}
+
+.checklist-choice-line,
+.checklist-check-grid,
+.checklist-total-row,
+.checklist-signatures {
+  display: grid;
+  gap: 8px;
+}
+
+.checklist-choice-line {
+  grid-template-columns: auto repeat(3, minmax(0, 1fr));
+  align-items: center;
+}
+
+.checklist-check-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.checklist-textarea {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.checklist-textarea span {
+  display: block;
+  min-height: 22px;
+  border-bottom: 1px solid rgba(44, 58, 71, 0.28);
+}
+
+.checklist-table-wrap {
+  overflow-x: auto;
+}
+
+.checklist-items-table {
+  width: 100%;
+  min-width: 980px;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.checklist-items-table th,
+.checklist-items-table td {
+  border: 1px solid rgba(44, 58, 71, 0.16);
+  padding: 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.checklist-items-table th {
+  background: rgba(44, 58, 71, 0.07);
+  color: var(--navy);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.checklist-total-row {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 12px;
+}
+
+.checklist-total-row strong {
+  border-radius: 14px;
+  background: rgba(201, 123, 139, 0.08);
+  padding: 10px 12px;
+  color: var(--navy);
+}
+
+.checklist-signatures {
+  grid-template-columns: 1fr;
+  margin-top: 14px;
+}
+
 .signature-pad {
   width: 100%;
   height: 180px;
@@ -1332,13 +1658,16 @@ th {
   }
 
   .topbar {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 12px;
-    padding: 12px 14px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px 12px;
+    padding: 12px 16px;
   }
 
   .topbar-brand {
+    grid-column: 1;
+    grid-row: 1;
     min-width: 0;
   }
 
@@ -1348,10 +1677,20 @@ th {
   }
 
   .nav-tabs {
+    grid-column: 1 / -1;
+    grid-row: 2;
     width: 100%;
     overflow-x: auto;
     flex-wrap: nowrap;
     padding-bottom: 2px;
+  }
+
+  .logout-button {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+    min-height: 34px;
+    padding: 6px 4px;
   }
 
   .tab-button {
@@ -1389,6 +1728,11 @@ th {
   .payment-method-grid,
   .payment-detail,
   .payment-admin-card,
+  .checklist-data-grid,
+  .checklist-fill-grid,
+  .checklist-choice-line,
+  .checklist-check-grid,
+  .checklist-total-row,
   .search-row {
     grid-template-columns: 1fr;
   }
@@ -1457,6 +1801,10 @@ th {
   .contract-paper {
     padding: 14px;
     line-height: 1.55;
+  }
+
+  .contract-value-list {
+    grid-template-columns: 1fr;
   }
 
   .signature-pad {
@@ -2224,6 +2572,17 @@ th {
   color: #9a4050;
 }
 
+.journey-status .status-pill,
+.journey-status .status-pill.pending,
+.journey-status .status-pill.warning,
+.journey-status .status-pill.paid,
+.journey-status .status-pill.signed,
+.journey-status .status-pill.cancelled {
+  border-color: var(--navy);
+  background: var(--navy);
+  color: #fffdf9;
+}
+
 .client-reservation-card {
   padding: 18px;
 }
@@ -2493,6 +2852,10 @@ th {
   align-items: start;
 }
 
+.journey-step-four-layout.single-column {
+  grid-template-columns: 1fr;
+}
+
 .reservations-table-panel {
   overflow: hidden;
 }
@@ -2654,13 +3017,21 @@ th {
 }
 
 .reservation-info-grid .detail-row {
-  grid-template-columns: minmax(116px, 0.72fr) minmax(0, 1fr);
-  gap: 8px;
+  grid-template-columns: 1fr;
+  gap: 4px;
   border-bottom: 1px dashed rgba(44, 58, 71, 0.12);
   padding-bottom: 10px;
 }
 
+.reservation-info-grid .detail-row span {
+  font-size: 0.72rem;
+  line-height: 1.25;
+}
+
 .reservation-info-grid .detail-row strong {
+  display: block;
+  min-width: 0;
+  line-height: 1.35;
   overflow-wrap: anywhere;
 }
 
@@ -3106,12 +3477,21 @@ details.reservation-info-card > summary::-webkit-details-marker {
     background: #fff;
   }
 
+  @page {
+    margin: 10mm;
+  }
+
   .topbar,
   .nav-tabs,
   .actions,
   .modal-title button,
   .signature-pad,
   .no-print {
+    display: none !important;
+  }
+
+  .app-shell.has-modal > .main,
+  .app-shell.has-modal > .toast {
     display: none !important;
   }
 
@@ -3129,5 +3509,50 @@ details.reservation-info-card > summary::-webkit-details-marker {
 
   .contract-paper {
     border: 0;
+  }
+
+  .checklist-paper {
+    border: 0;
+    padding: 0;
+    color: #111;
+  }
+
+  .checklist-header,
+  .checklist-section {
+    break-inside: avoid;
+  }
+
+  .checklist-items-section {
+    break-inside: auto;
+  }
+
+  .checklist-data-grid,
+  .checklist-fill-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .checklist-choice-line {
+    grid-template-columns: auto repeat(3, minmax(0, 1fr));
+  }
+
+  .checklist-check-grid,
+  .checklist-total-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .checklist-items-table {
+    min-width: 0;
+    font-size: 8px;
+  }
+
+  .checklist-items-table th,
+  .checklist-items-table td {
+    padding: 4px;
+  }
+
+  .checklist-data-grid div,
+  .checklist-fill-grid div,
+  .checklist-total-row strong {
+    background: #fff;
   }
 }
