@@ -3737,6 +3737,60 @@ details.reservation-info-card > summary::-webkit-details-marker {
   background: rgba(248, 243, 237, 0.8);
 }
 
+.app-shell.role-client .journey-step-panel > .panel-body,
+.app-shell.role-client .journey-step-four-layout .panel-body {
+  background:
+    linear-gradient(180deg, rgba(255, 253, 252, 0.72), rgba(248, 243, 237, 0.62)),
+    var(--surface-soft);
+}
+
+.app-shell.role-client .submitted-reservation,
+.app-shell.role-client .handoff-card,
+.app-shell.role-client .care-box,
+.app-shell.role-client .journey-budget-summary,
+.app-shell.role-client .readonly-review,
+.app-shell.role-client .payment-method-section {
+  border-color: rgba(217, 204, 190, 0.9);
+  background:
+    linear-gradient(180deg, rgba(255, 253, 252, 0.98), rgba(255, 253, 252, 0.92)),
+    var(--surface);
+}
+
+.app-shell.role-client .submitted-reservation .summary-list,
+.app-shell.role-client .reservation-value-summary {
+  border: 1px solid rgba(217, 204, 190, 0.78);
+  border-radius: 20px;
+  background: rgba(255, 253, 252, 0.86);
+  padding: 12px;
+}
+
+.app-shell.role-client .reservation-value-summary {
+  gap: 8px;
+}
+
+.app-shell.role-client .reservation-value-summary .summary-row {
+  border: 1px solid rgba(217, 204, 190, 0.82);
+  border-radius: 16px;
+  background: rgba(255, 253, 252, 0.9);
+  padding: 12px 14px;
+}
+
+.app-shell.role-client .submitted-reservation .summary-row {
+  border-bottom-color: rgba(217, 204, 190, 0.88);
+}
+
+.app-shell.role-client .reservation-value-summary .summary-row.total {
+  border-color: rgba(201, 139, 158, 0.38);
+  background:
+    linear-gradient(180deg, rgba(201, 139, 158, 0.12), rgba(255, 253, 252, 0.94)),
+    var(--surface);
+}
+
+.app-shell.role-client .reservation-value-summary .hint-box {
+  border-color: rgba(201, 139, 158, 0.28);
+  background: rgba(245, 236, 220, 0.58);
+}
+
 @media (max-width: 1180px) {
   .admin-reservations-layout,
   .reservation-detail-columns {

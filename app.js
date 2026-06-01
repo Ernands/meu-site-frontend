@@ -161,6 +161,7 @@ const attachmentUploadConfig = {
 const app = document.querySelector("#app");
 
 let store = normalizeStore(structuredClone(seedData));
+let activeStoreRefresh = null;
 let state = {
   user: null,
   tab: "orcamento",
@@ -184,6 +185,7 @@ let state = {
   newQuoteMode: false,
   apiConnected: false,
   authToken: authStorage.getItem(authTokenKey) || "",
+  lastStoreSyncAt: 0,
   editingPaymentMethodId: "",
   adminQuoteClientId: "",
   adminQuoteSearch: "",
@@ -462,13 +464,22 @@ function applyApiStore(apiStore) {
 }
 
 async function hydrateStoreFromApi() {
-  try {
-    applyApiStore(await apiRequest("/store"));
-    return true;
-  } catch {
-    state.apiConnected = false;
-    return false;
-  }
+  if (activeStoreRefresh) return activeStoreRefresh;
+
+  activeStoreRefresh = (async () => {
+    try {
+      applyApiStore(await apiRequest("/store"));
+      state.lastStoreSyncAt = Date.now();
+      return true;
+    } catch {
+      state.apiConnected = false;
+      return false;
+    } finally {
+      activeStoreRefresh = null;
+    }
+  })();
+
+  return activeStoreRefresh;
 }
 
 async function loginWithApi(role, login, password) {
@@ -505,7 +516,7 @@ async function createReservationWithApi(client, reservation, addons) {
     const payload = await apiRequest("/reservations", {
       method: "POST",
       body: JSON.stringify({ client, reservation, addons }),
-      timeoutMs: 7000,
+      timeoutMs: apiTimeoutMs,
     });
     return { available: true, payload };
   } catch (error) {
@@ -519,7 +530,7 @@ async function reservationActionWithApi(id, action, values = {}) {
     const payload = await apiRequest(`/reservations/${encodeURIComponent(id)}/actions/${action}`, {
       method: "POST",
       body: JSON.stringify(values),
-      timeoutMs: 7000,
+      timeoutMs: apiTimeoutMs,
     });
     return { available: true, payload };
   } catch (error) {
@@ -1534,7 +1545,7 @@ async function deleteKitAddon(kind, id) {
   if (await deleteKitAddonWithApi(kind, id)) {
     if (kind === "kit" && state.selectedKitId === id) state.selectedKitId = getActiveKits()[0]?.id || store.kits[0]?.id;
     if (kind !== "kit") state.selectedAdditions = state.selectedAdditions.filter((addonId) => addonId !== id);
-    showToast(`${entry.name} excluÃ­do com sucesso.`);
+    showToast(`${entry.name} excluído com sucesso.`);
     render();
     return;
   }
@@ -1643,7 +1654,7 @@ async function deleteTheme(id) {
 
   if (await deleteThemeWithApi(id)) {
     if (state.selectedThemeId === id) state.selectedThemeId = "";
-    showToast(`${entry.name} excluÃ­do com sucesso.`);
+    showToast(`${entry.name} excluído com sucesso.`);
     render();
     return;
   }
@@ -1912,17 +1923,17 @@ function validateClientForm(form) {
   const errors = {};
   if (!textValue(formData, "name")) errors.name = "Informe o nome.";
   if (!cpf) errors.cpf = "Informe o CPF.";
-  else if (!isValidCpf(cpf)) errors.cpf = "Informe um CPF vÃ¡lido.";
-  if (textValue(formData, "email") && !isValidEmail(textValue(formData, "email"))) errors.email = "Informe um e-mail vÃ¡lido.";
-  if (textValue(formData, "phone") && !isValidPhone(textValue(formData, "phone"))) errors.phone = "Informe um telefone vÃ¡lido.";
-  if (textValue(formData, "whatsapp") && !isValidPhone(textValue(formData, "whatsapp"))) errors.whatsapp = "Informe um WhatsApp vÃ¡lido.";
-  if (textValue(formData, "cep") && onlyDigits(textValue(formData, "cep")).length !== 8) errors.cep = "Informe um CEP vÃ¡lido.";
-  if (textValue(formData, "uf") && !/^[A-Z]{2}$/.test(textValue(formData, "uf").toUpperCase())) errors.uf = "Informe uma UF vÃ¡lida.";
+  else if (!isValidCpf(cpf)) errors.cpf = "Informe um CPF válido.";
+  if (textValue(formData, "email") && !isValidEmail(textValue(formData, "email"))) errors.email = "Informe um e-mail válido.";
+  if (textValue(formData, "phone") && !isValidPhone(textValue(formData, "phone"))) errors.phone = "Informe um telefone válido.";
+  if (textValue(formData, "whatsapp") && !isValidPhone(textValue(formData, "whatsapp"))) errors.whatsapp = "Informe um WhatsApp válido.";
+  if (textValue(formData, "cep") && onlyDigits(textValue(formData, "cep")).length !== 8) errors.cep = "Informe um CEP válido.";
+  if (textValue(formData, "uf") && !/^[A-Z]{2}$/.test(textValue(formData, "uf").toUpperCase())) errors.uf = "Informe uma UF válida.";
   if (login && !isValidCpf(login)) errors.login = "Use o CPF como login.";
   if (!textValue(formData, "password") && !(existingId && state.apiConnected)) errors.password = "Informe a senha.";
   const loginDigits = onlyDigits(login);
   const duplicate = loginDigits && store.users.find((user) => user.role === "client" && user.id !== clientId && onlyDigits(user.login || user.email) === loginDigits);
-  if (duplicate) errors.login = "JÃ¡ existe outro cliente com esse login.";
+  if (duplicate) errors.login = "Já existe outro cliente com esse login.";
   return errors;
 }
 
@@ -1945,7 +1956,7 @@ function validateAccessForm(form) {
     const nextLogin = role === "client" ? onlyDigits(login) : login.toLowerCase();
     return user.id !== userId && otherLogin === nextLogin;
   });
-  if (duplicate) errors.login = "JÃ¡ existe outro usuÃ¡rio com esse login.";
+  if (duplicate) errors.login = "Já existe outro usuário com esse login.";
   return errors;
 }
 
@@ -1954,10 +1965,10 @@ function validateInventoryForm(form) {
   const originalCode = form.dataset.itemCode || "";
   const code = textValue(formData, "codigo") || originalCode;
   const errors = {};
-  if (!code) errors.codigo = "Informe o cÃ³digo.";
+  if (!code) errors.codigo = "Informe o código.";
   if (!textValue(formData, "name")) errors.name = "Informe o item.";
   const duplicate = code && store.inventory.find((entry) => entry.codigo === code && entry.codigo !== originalCode);
-  if (duplicate) errors.codigo = "JÃ¡ existe outro item com esse cÃ³digo.";
+  if (duplicate) errors.codigo = "Já existe outro item com esse código.";
   return errors;
 }
 
@@ -1986,11 +1997,11 @@ function validateQuoteForm() {
   if (!getSelectedKit()) errors.kitId = "Selecione um kit.";
   if (!state.draft.name.trim()) errors.name = "Informe o nome.";
   if (!state.draft.cpf.trim()) errors.cpf = "Informe o CPF.";
-  else if (!isValidCpf(state.draft.cpf)) errors.cpf = "Informe um CPF vÃ¡lido.";
-  if (state.draft.phone && !isValidPhone(state.draft.phone)) errors.phone = "Informe um telefone vÃ¡lido.";
-  if (state.draft.whatsapp && !isValidPhone(state.draft.whatsapp)) errors.whatsapp = "Informe um WhatsApp vÃ¡lido.";
+  else if (!isValidCpf(state.draft.cpf)) errors.cpf = "Informe um CPF válido.";
+  if (state.draft.phone && !isValidPhone(state.draft.phone)) errors.phone = "Informe um telefone válido.";
+  if (state.draft.whatsapp && !isValidPhone(state.draft.whatsapp)) errors.whatsapp = "Informe um WhatsApp válido.";
   if (!state.draft.eventDate || state.draft.eventDate < minEventDate()) errors.eventDate = `A data deve ser a partir de ${dateLabel(minEventDate())}.`;
-  if (!state.draft.address.trim()) errors.address = "Informe o endereÃ§o do evento.";
+  if (!state.draft.address.trim()) errors.address = "Informe o endereço do evento.";
   if (isCustomThemeMode() && !state.draft.customTheme.trim()) errors.customTheme = "Informe o tema desejado.";
   if (!themeSelectionName()) errors.themeId = "Escolha um tema ou informe o tema desejado.";
   return errors;
@@ -2196,7 +2207,7 @@ function fieldErrorMessage(key) {
 
 function renderFormAlert() {
   return Object.keys(state.formErrors || {}).length
-    ? `<div class="form-alert error">Preencha os campos obrigatÃ³rios destacados.</div>`
+    ? `<div class="form-alert error">Preencha os campos obrigatórios destacados.</div>`
     : "";
 }
 
@@ -2210,7 +2221,7 @@ function findFormField(form, key) {
   return form.querySelector(`[name="${key}"]`) || form.querySelector(`[data-draft="${key}"]`) || form.querySelector(`#${key}`);
 }
 
-function applyFormErrors(form, errors, message = "Preencha os campos obrigatÃ³rios.") {
+function applyFormErrors(form, errors, message = "Preencha os campos obrigatórios.") {
   state.formErrors = errors;
   clearRenderedFormErrors(form);
   form.insertAdjacentHTML("afterbegin", `<div class="form-alert error">${escapeHtml(message)}</div>`);
@@ -2230,7 +2241,7 @@ function applyFormErrors(form, errors, message = "Preencha os campos obrigatÃ³
   }
 }
 
-function handleValidationErrors(form, errors, message = "Preencha os campos obrigatÃ³rios.") {
+function handleValidationErrors(form, errors, message = "Preencha os campos obrigatórios.") {
   if (!Object.keys(errors).length) {
     state.formErrors = {};
     clearRenderedFormErrors(form);
@@ -2276,7 +2287,7 @@ async function runAction(action, callback, successMessage, successType = "succes
   } catch (error) {
     console.error(error);
     state.pendingAction = "";
-    showToast(error?.userMessage || "NÃ£o foi possÃ­vel concluir a aÃ§Ã£o. Revise os dados e tente novamente.", "error");
+    showToast(error?.userMessage || "Não foi possível concluir a ação. Revise os dados e tente novamente.", "error");
     render();
   }
 }
@@ -2437,7 +2448,7 @@ function renderShell() {
   const roleLabel = state.user.role === "admin" ? "Admin" : "Cliente";
   const companyName = escapeHtml(store.company.name);
   app.innerHTML = `
-    <div class="app-shell ${state.modal ? "has-modal" : ""}">
+    <div class="app-shell role-${escapeAttr(state.user.role)} ${state.modal ? "has-modal" : ""}">
       <header class="topbar">
         <div class="topbar-brand">
           <img class="topbar-logo" src="assets/atelie-lica-logo.png" alt="${companyName}" />
@@ -2735,7 +2746,7 @@ function canOpenClientStep(step) {
           currentReservation &&
           (
             isReservationContractSigned(currentReservation) ||
-            ["Entregue", "DevoluÃ§Ã£o", "Finalizado"].includes(currentReservation.status)
+            ["Entregue", "Devolução", "Finalizado"].includes(currentReservation.status)
           )
         );
       }
@@ -3002,7 +3013,7 @@ function renderSubmittedReservationView(reservation) {
 function renderReservationValueSummary(reservation) {
   const finance = reservationFinancials(reservation);
   return `
-    <div class="summary-list">
+    <div class="summary-list reservation-value-summary">
       <div class="summary-row"><span>Kit</span><strong>${money(reservation.kitValue)}</strong></div>
       <div class="summary-row"><span>Tema</span><strong>${escapeHtml(reservationThemeLabel(reservation))}</strong></div>
       <div class="summary-row"><span>Adicionais</span><strong>${money(reservation.additionalValue || 0)}</strong></div>
@@ -3583,7 +3594,7 @@ function clientProposalNextActionText(entry) {
   return map[entry.status] || "Acompanhe o andamento da proposta.";
 }
 
-async function reloadStoreFromLocalStorage() {
+async function reloadStoreFromPersistence() {
   if (state.apiConnected || state.authToken) {
     const hydrated = await hydrateStoreFromApi();
     if (hydrated) return true;
@@ -3617,7 +3628,7 @@ async function refreshSelectedClientProposal() {
     return;
   }
 
-  const reloaded = await reloadStoreFromLocalStorage();
+  const reloaded = await reloadStoreFromPersistence();
   if (!reloaded) {
     showToast("Nao foi possivel atualizar. A API e o banco precisam estar ativos.", "error");
     return;
@@ -4083,7 +4094,7 @@ function legacyRenderClientReservations() {
     </section>
     <section class="panel">
       <div class="client-reservation-cards">
-        ${rows.length ? rows.map(renderClientReservationCard).join("") : `<div class="empty-state">VocÃª ainda nÃ£o tem propostas ou pedidos.</div>`}
+        ${rows.length ? rows.map(renderClientReservationCard).join("") : `<div class="empty-state">Você ainda não tem propostas ou pedidos.</div>`}
       </div>
       <div class="table-wrap client-reservation-table">
         <table>
@@ -4136,7 +4147,7 @@ function renderClientReservations() {
     </section>
     <section class="panel">
       <div class="client-reservation-cards">
-        ${rows.length ? rows.map(renderClientReservationCard).join("") : `<div class="empty-state">VocÃª ainda nÃ£o tem propostas ou pedidos.</div>`}
+        ${rows.length ? rows.map(renderClientReservationCard).join("") : `<div class="empty-state">Você ainda não tem propostas ou pedidos.</div>`}
       </div>
       <div class="table-wrap client-reservation-table">
         <table>
@@ -4163,7 +4174,7 @@ function renderClientReservations() {
 
 function renderClientReservationCard(entry) {
   const financials = reservationFinancials(entry);
-  const pending = financials.finalDue > 0 && entry.status !== "Cancelada" ? money(financials.finalDue) : "Sem pendÃªncia";
+  const pending = financials.finalDue > 0 && entry.status !== "Cancelada" ? money(financials.finalDue) : "Sem pendência";
   return `
     <article class="client-reservation-card">
       <div class="client-reservation-card-top">
@@ -4179,7 +4190,7 @@ function renderClientReservationCard(entry) {
       </div>
       <div class="client-reservation-card-grid">
         <div><span>Total</span><strong>${money(entry.total)}</strong></div>
-        <div><span>PendÃªncia</span><strong>${pending}</strong></div>
+        <div><span>Pendência</span><strong>${pending}</strong></div>
       </div>
       <p class="client-reservation-next">${escapeHtml(clientProposalNextActionText(entry))}</p>
       <button class="primary-button" data-view-client-proposal="${escapeAttr(entry.id)}">Ver Proposta</button>
@@ -6591,9 +6602,6 @@ async function submitQuote() {
     store.reservations.push(entry);
     saveStore();
   }
-  console.log("Reserva criada:", entry);
-  console.log("Total de reservas:", store.reservations.length);
-  console.log("Últimas reservas:", store.reservations.slice(-3));
   state.selectedReservationId = entry.id;
   if (adminQuoteMode) {
     state.clientStep = 4;
@@ -6762,7 +6770,7 @@ async function saveSignature(id) {
     state.selectedReservationId = id;
     state.clientStep = 6;
     state.newQuoteMode = false;
-    showToast("Contrato assinado. O kit entrou em preparaÃ§Ã£o.");
+    showToast("Contrato assinado. O kit entrou em preparação.");
     render();
     return;
   }
@@ -7618,7 +7626,7 @@ document.addEventListener("click", async (event) => {
       await deleteClient(target.dataset.deleteClient);
     } catch (error) {
       console.error(error);
-      showToast(error?.userMessage || "NÃ£o foi possÃ­vel excluir o cliente.", "error");
+      showToast(error?.userMessage || "Não foi possível excluir o cliente.", "error");
       render();
     }
     return;
@@ -7648,7 +7656,7 @@ document.addEventListener("click", async (event) => {
       await deleteInventoryItem(target.dataset.deleteInventory);
     } catch (error) {
       console.error(error);
-      showToast(error?.userMessage || "NÃ£o foi possÃ­vel excluir o item.", "error");
+      showToast(error?.userMessage || "Não foi possível excluir o item.", "error");
       render();
     }
     return;
@@ -7673,7 +7681,7 @@ document.addEventListener("click", async (event) => {
       await toggleKitAddon("kit", target.dataset.toggleKit);
     } catch (error) {
       console.error(error);
-      showToast(error?.userMessage || "NÃ£o foi possÃ­vel atualizar o kit.", "error");
+      showToast(error?.userMessage || "Não foi possível atualizar o kit.", "error");
       render();
     }
     return;
@@ -7683,7 +7691,7 @@ document.addEventListener("click", async (event) => {
       await toggleKitAddon("addon", target.dataset.toggleAddon);
     } catch (error) {
       console.error(error);
-      showToast(error?.userMessage || "NÃ£o foi possÃ­vel atualizar o adicional.", "error");
+      showToast(error?.userMessage || "Não foi possível atualizar o adicional.", "error");
       render();
     }
     return;
@@ -7693,7 +7701,7 @@ document.addEventListener("click", async (event) => {
       await toggleTheme(target.dataset.toggleTheme);
     } catch (error) {
       console.error(error);
-      showToast(error?.userMessage || "NÃ£o foi possÃ­vel atualizar o tema.", "error");
+      showToast(error?.userMessage || "Não foi possível atualizar o tema.", "error");
       render();
     }
     return;
@@ -7703,7 +7711,7 @@ document.addEventListener("click", async (event) => {
       await deleteKitAddon("kit", target.dataset.deleteKit);
     } catch (error) {
       console.error(error);
-      showToast(error?.userMessage || "NÃ£o foi possÃ­vel excluir o kit.", "error");
+      showToast(error?.userMessage || "Não foi possível excluir o kit.", "error");
       render();
     }
     return;
@@ -7713,7 +7721,7 @@ document.addEventListener("click", async (event) => {
       await deleteKitAddon("addon", target.dataset.deleteAddon);
     } catch (error) {
       console.error(error);
-      showToast(error?.userMessage || "NÃ£o foi possÃ­vel excluir o adicional.", "error");
+      showToast(error?.userMessage || "Não foi possível excluir o adicional.", "error");
       render();
     }
     return;
@@ -7723,7 +7731,7 @@ document.addEventListener("click", async (event) => {
       await deleteTheme(target.dataset.deleteTheme);
     } catch (error) {
       console.error(error);
-      showToast(error?.userMessage || "NÃ£o foi possÃ­vel excluir o tema.", "error");
+      showToast(error?.userMessage || "Não foi possível excluir o tema.", "error");
       render();
     }
     return;
