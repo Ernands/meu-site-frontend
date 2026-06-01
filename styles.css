@@ -1,16 +1,18 @@
 :root {
   color-scheme: light;
-  --navy: #2c3a47;
-  --rose: #c97b8b;
-  --paper: #f7f2ec;
-  --champagne: #d8be96;
+  --navy: #2f3640;
+  --rose: #c98b9e;
+  --paper: #f8f3ed;
+  --champagne: #d9ccbe;
   --sage: #a8b8a1;
-  --ink: #353535;
-  --muted: #7b746e;
-  --canvas: #f1ece3;
-  --surface: #fffdf9;
-  --line: rgba(44, 58, 71, 0.14);
-  --rose-weak: #f8e7e8;
+  --ink: #2f3640;
+  --muted: #6d6a66;
+  --canvas: #e6dacb;
+  --band: #e6dacb;
+  --surface: #fffdfc;
+  --surface-soft: #f8f3ed;
+  --line: rgba(217, 204, 190, 0.92);
+  --rose-weak: #f5e1e6;
   --teal: var(--sage);
   --teal-weak: #edf2ea;
   --gold: #b6925d;
@@ -21,8 +23,8 @@
   --radius-lg: 28px;
   --radius-md: 22px;
   --radius-sm: 16px;
-  --shadow: 0 22px 70px rgba(44, 58, 71, 0.11);
-  --shadow-soft: 0 12px 35px rgba(44, 58, 71, 0.08);
+  --shadow: 0 24px 74px rgba(47, 54, 64, 0.13);
+  --shadow-soft: 0 14px 38px rgba(47, 54, 64, 0.1);
   --font-title: "Cormorant Garamond", Georgia, serif;
   --font-ui: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
@@ -47,9 +49,9 @@ body::before {
   pointer-events: none;
   content: "";
   background:
-    radial-gradient(circle at 16% 12%, rgba(201, 123, 139, 0.1), transparent 30%),
-    radial-gradient(circle at 88% 8%, rgba(216, 190, 150, 0.22), transparent 34%),
-    linear-gradient(135deg, #f1ece3 0%, #ece3d4 52%, #e5d7c2 100%);
+    radial-gradient(circle at 14% 10%, rgba(255, 253, 252, 0.5), transparent 26%),
+    radial-gradient(circle at 86% 6%, rgba(201, 139, 158, 0.12), transparent 28%),
+    linear-gradient(135deg, #e6dacb 0%, #ddd0c0 48%, #e6dacb 100%);
 }
 
 h1,
@@ -2626,6 +2628,243 @@ th {
   box-shadow: var(--shadow);
 }
 
+/* Visual depth refresh inspired by the Atelie LICA reference palette. */
+.auth-panel {
+  background:
+    radial-gradient(circle at 76% 84%, rgba(201, 139, 158, 0.12), transparent 25%),
+    linear-gradient(180deg, rgba(255, 253, 252, 0.5), rgba(230, 218, 203, 0.92)),
+    var(--canvas);
+}
+
+.topbar {
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 253, 252, 0.94);
+  box-shadow: 0 10px 30px rgba(47, 54, 64, 0.08);
+}
+
+.main {
+  position: relative;
+}
+
+.section-title {
+  color: var(--ink);
+}
+
+.section-title h2 {
+  text-shadow: 0 1px 0 rgba(255, 253, 252, 0.65);
+}
+
+.login-box,
+.metric,
+.panel,
+.kit-card,
+.item-card,
+.client-reservation-card,
+.mini-list-row,
+.readonly-review,
+.payment-method-section,
+.attention-box,
+.deposit-highlight,
+.payment-admin-card,
+.empty-state,
+.admin-reservation-fields,
+.contract-paper,
+.reservation-hero-card,
+.reservation-info-card,
+.payment-modal-summary,
+.finance-payment-row,
+.checklist-paper {
+  border-color: var(--line);
+  background:
+    linear-gradient(180deg, rgba(255, 253, 252, 0.98), rgba(255, 253, 252, 0.92)),
+    var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.panel,
+.reservation-info-card,
+.reservation-hero-card,
+.metric {
+  box-shadow: 0 18px 46px rgba(47, 54, 64, 0.1);
+}
+
+.panel-header,
+.modal-title {
+  border-bottom-color: var(--line);
+  background:
+    linear-gradient(180deg, rgba(255, 253, 252, 0.98), rgba(248, 243, 237, 0.82)),
+    var(--surface);
+}
+
+.panel-body,
+.modal-content {
+  background: rgba(255, 253, 252, 0.48);
+}
+
+.table-wrap {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+th {
+  background: var(--surface-soft);
+  color: var(--navy);
+}
+
+td,
+th {
+  border-bottom-color: var(--line);
+}
+
+.reservation-expanded-row td,
+.finance-expanded-row td {
+  background: rgba(221, 208, 192, 0.48);
+}
+
+.reservation-expanded-detail,
+.finance-expanded-detail {
+  border-top-color: rgba(217, 204, 190, 0.95);
+}
+
+.reservation-detail-panel .panel-body,
+.finance-expanded-detail,
+.payment-compact-list,
+.reservation-accordion,
+.handoff-card,
+.care-box,
+.journey-budget-summary,
+.finance-mini-card,
+.payment-modal-summary div,
+.checklist-data-grid div,
+.checklist-fill-grid div {
+  border-color: var(--line);
+  background: var(--surface-soft);
+}
+
+.finance-mini-card,
+.payment-modal-summary div,
+.checklist-data-grid div,
+.checklist-fill-grid div {
+  box-shadow: inset 0 1px 0 rgba(255, 253, 252, 0.72);
+}
+
+.finance-mini-card.is-total,
+.contract-value-total,
+.reservation-table-row.selected td,
+.finance-table-row.selected td {
+  border-color: rgba(201, 139, 158, 0.5);
+  background: linear-gradient(180deg, rgba(201, 139, 158, 0.13), rgba(255, 253, 252, 0.88));
+}
+
+.finance-mini-card.is-pending {
+  border-color: rgba(180, 35, 24, 0.28);
+  background: linear-gradient(180deg, rgba(180, 35, 24, 0.08), rgba(255, 253, 252, 0.9));
+}
+
+.primary-button {
+  border-color: var(--navy);
+  background: var(--navy);
+}
+
+.secondary-button,
+.tab-button {
+  border-color: rgba(217, 204, 190, 0.85);
+  background: rgba(255, 253, 252, 0.72);
+}
+
+.secondary-button:hover,
+.tab-button:hover {
+  border-color: rgba(201, 139, 158, 0.45);
+  background: var(--surface);
+}
+
+.tab-button.active {
+  border-color: rgba(201, 139, 158, 0.42);
+  background: rgba(201, 139, 158, 0.16);
+  color: var(--navy);
+}
+
+.field input,
+.field select,
+.field textarea,
+.registration-actions input,
+.login-input-shell {
+  border-color: rgba(217, 204, 190, 0.95);
+  background: rgba(255, 253, 252, 0.92);
+}
+
+.field input:focus,
+.field select:focus,
+.field textarea:focus,
+.registration-actions input:focus,
+.login-input-shell:focus-within {
+  border-color: rgba(201, 139, 158, 0.68);
+  box-shadow: 0 0 0 4px rgba(201, 139, 158, 0.13);
+}
+
+.status-pill {
+  border-color: rgba(217, 204, 190, 0.95);
+  background: rgba(248, 243, 237, 0.88);
+  color: var(--navy);
+}
+
+.status-pill.pending,
+.status-pill.warning {
+  background: rgba(217, 204, 190, 0.62);
+  color: #6f4f2d;
+}
+
+.status-pill.paid,
+.status-pill.signed {
+  background: rgba(168, 184, 161, 0.24);
+  color: #405a3f;
+}
+
+.status-pill.cancelled {
+  background: rgba(201, 139, 158, 0.18);
+  color: #934557;
+}
+
+.detail-eyebrow,
+.finance-mini-card span,
+.reservation-hero-total span,
+.checklist-header span,
+.checklist-section h5 {
+  color: var(--muted);
+}
+
+.reservation-hero-card {
+  background:
+    linear-gradient(135deg, rgba(255, 253, 252, 0.98), rgba(248, 243, 237, 0.92)),
+    linear-gradient(90deg, rgba(201, 139, 158, 0.12), rgba(217, 204, 190, 0.22));
+}
+
+.reservation-hero-total {
+  border-color: var(--line);
+  background: rgba(255, 253, 252, 0.84);
+}
+
+.client-reservation-next,
+.hint-box,
+.checklist-note {
+  border-color: rgba(201, 139, 158, 0.24);
+  background: rgba(201, 139, 158, 0.08);
+}
+
+.metric::after {
+  background: rgba(217, 204, 190, 0.42);
+}
+
+.modal-backdrop {
+  background: rgba(47, 54, 64, 0.42);
+}
+
+.modal {
+  border-color: var(--line);
+  background: var(--surface);
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .login-box,
   .panel,
@@ -3400,6 +3639,102 @@ details.reservation-info-card > summary::-webkit-details-marker {
 
 .finance-expanded-actions {
   margin-top: 14px;
+}
+
+/* Page-color breathing areas between cards and grouped blocks. */
+.panel-body,
+.modal-content,
+.reservation-expanded-row td,
+.finance-expanded-row td,
+.reservation-expanded-detail,
+.finance-expanded-detail,
+.reservation-detail,
+.finance-expanded-content,
+.reservation-detail-panel .panel-body,
+.reservation-detail-columns,
+.payment-compact-list,
+.reservation-accordion,
+.finance-mini-card,
+.payment-modal-summary div,
+.checklist-data-grid div,
+.checklist-fill-grid div,
+.admin-reservation-fields,
+.finance-payment-row,
+.finance-adjustments-card .admin-reservation-fields,
+.receipt-thumb,
+.receipt-file-icon {
+  background: var(--band);
+}
+
+/* Client journey keeps the champagne only as breathing space; readable content cards stay warm-white. */
+.handoff-card,
+.care-box,
+.journey-budget-summary,
+.submitted-reservation,
+.receipt-box,
+.readonly-review,
+.payment-method-section,
+.attention-box {
+  background:
+    linear-gradient(180deg, rgba(255, 253, 252, 0.98), rgba(255, 253, 252, 0.92)),
+    var(--surface);
+}
+
+.deposit-highlight {
+  background:
+    linear-gradient(180deg, rgba(245, 236, 220, 0.9), rgba(255, 253, 252, 0.9)),
+    var(--gold-weak);
+}
+
+.journey-budget-summary {
+  border-color: rgba(217, 204, 190, 0.95);
+  box-shadow: 0 18px 46px rgba(47, 54, 64, 0.08);
+}
+
+.handoff-card,
+.care-box {
+  border-color: rgba(217, 204, 190, 0.95);
+}
+
+.journey-step.locked {
+  opacity: 0.62;
+  background: rgba(255, 253, 252, 0.72);
+}
+
+.journey-step.locked span {
+  background: rgba(217, 204, 190, 0.72);
+  color: var(--muted);
+}
+
+.journey-step-four-layout > .reservation-detail-panel .panel-body {
+  background:
+    linear-gradient(180deg, rgba(255, 253, 252, 0.98), rgba(255, 253, 252, 0.94)),
+    var(--surface);
+}
+
+.journey-step-four-layout > .reservation-detail-panel .summary-list {
+  gap: 10px;
+}
+
+.journey-step-four-layout > .reservation-detail-panel .summary-row {
+  align-items: center;
+  border: 1px solid rgba(217, 204, 190, 0.9);
+  border-radius: 16px;
+  background: rgba(248, 243, 237, 0.72);
+  padding: 12px 14px;
+}
+
+.journey-step-four-layout > .reservation-detail-panel .summary-row.total {
+  border-color: rgba(201, 139, 158, 0.36);
+  background:
+    linear-gradient(180deg, rgba(201, 139, 158, 0.12), rgba(255, 253, 252, 0.92)),
+    var(--surface);
+}
+
+.journey-step-four-layout > .reservation-detail-panel .hint-box {
+  margin-top: 2px;
+  border-color: rgba(201, 139, 158, 0.28);
+  background: rgba(248, 243, 237, 0.8);
 }
 
 @media (max-width: 1180px) {
