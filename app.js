@@ -7150,16 +7150,20 @@ function escapeAttr(value) {
 function safeApiFileUrl(value) {
   const src = String(value || "");
   const filePathPattern = /^\/api\/files\/[\w-]+\/content$/i;
+  const withFileToken = (url) => {
+    if (state.authToken) url.searchParams.set("fileToken", state.authToken);
+    return url.href;
+  };
 
   if (filePathPattern.test(src)) {
-    return new URL(src, apiBaseUrl).href;
+    return withFileToken(new URL(src, apiBaseUrl));
   }
 
   try {
     const url = new URL(src);
     const apiUrl = new URL(apiBaseUrl);
     if (url.origin === apiUrl.origin && filePathPattern.test(url.pathname)) {
-      return url.href;
+      return withFileToken(url);
     }
   } catch {
     return "";
