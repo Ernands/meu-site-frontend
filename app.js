@@ -455,31 +455,87 @@ async function apiRequest(path, options = {}) {
   }
 }
 
-function applyApiStore(apiStore) {
-  store = normalizeStore({
-    ...structuredClone(seedData),
-    ...apiStore,
-  });
+const storeSectionKeyMap = {
+  settings: ["company", "serviceFees", "paymentMethods"],
+  people: ["clients", "users"],
+  catalog: ["inventory", "kits", "addons", "themes"],
+  reservations: ["reservations"],
+};
+
+function normalizeStoreSectionList(sections = null) {
+  if (!sections) return [];
+  const raw = Array.isArray(sections) ? sections : String(sections).split(",");
+  return [...new Set(raw.map((section) => String(section || "").trim().toLowerCase()).filter((section) => storeSectionKeyMap[section]))];
+}
+
+function storeApiPath(sections = null) {
+  const normalizedSections = normalizeStoreSectionList(sections);
+  if (!normalizedSections.length) return "/store";
+  if (normalizedSections.length === 1) return `/store/${encodeURIComponent(normalizedSections[0])}`;
+  return `/store?sections=${encodeURIComponent(normalizedSections.join(","))}`;
+}
+
+function storeSectionsForAdminTab(tab) {
+  const map = {
+    dashboard: ["settings", "people", "reservations"],
+    reservas: ["settings", "people", "reservations"],
+    financeiro: ["settings", "people", "reservations"],
+    clientes: ["people"],
+    acessos: ["people"],
+    estoque: ["catalog"],
+    "kit-adicionais": ["catalog"],
+    temas: ["catalog"],
+    "novo-orcamento": ["settings", "people", "catalog", "reservations"],
+  };
+  return map[tab] || null;
+}
+
+function storeSectionsForClientTab(tab) {
+  const map = {
+    orcamento: ["settings", "catalog", "reservations"],
+    "minhas-reservas": ["settings", "reservations"],
+  };
+  return map[tab] || null;
+}
+
+function applyApiStore(apiStore, sections = null) {
+  const normalizedSections = normalizeStoreSectionList(sections);
+  const nextStore = normalizedSections.length ? structuredClone(store) : structuredClone(seedData);
+
+  if (normalizedSections.length) {
+    normalizedSections.forEach((section) => {
+      (storeSectionKeyMap[section] || []).forEach((key) => {
+        if (Object.prototype.hasOwnProperty.call(apiStore || {}, key)) nextStore[key] = apiStore[key];
+      });
+    });
+  } else {
+    Object.assign(nextStore, apiStore);
+  }
+
+  store = normalizeStore(nextStore);
   state.apiConnected = true;
 }
 
-async function hydrateStoreFromApi() {
-  if (activeStoreRefresh) return activeStoreRefresh;
+async function hydrateStoreFromApi(sections = null) {
+  const normalizedSections = normalizeStoreSectionList(sections);
+  const refreshKey = normalizedSections.length ? normalizedSections.join(",") : "all";
+  if (activeStoreRefresh?.key === refreshKey) return activeStoreRefresh.promise;
 
-  activeStoreRefresh = (async () => {
+  const refreshPromise = (async () => {
     try {
-      applyApiStore(await apiRequest("/store"));
+      applyApiStore(await apiRequest(storeApiPath(normalizedSections)), normalizedSections);
       state.lastStoreSyncAt = Date.now();
       return true;
     } catch {
       state.apiConnected = false;
       return false;
     } finally {
-      activeStoreRefresh = null;
+      if (activeStoreRefresh?.promise === refreshPromise) activeStoreRefresh = null;
     }
   })();
 
-  return activeStoreRefresh;
+  activeStoreRefresh = { key: refreshKey, promise: refreshPromise };
+  return refreshPromise;
 }
 
 async function loginWithApi(role, login, password) {
@@ -3594,9 +3650,9 @@ function clientProposalNextActionText(entry) {
   return map[entry.status] || "Acompanhe o andamento da proposta.";
 }
 
-async function reloadStoreFromPersistence() {
+async function reloadStoreFromPersistence(sections = null) {
   if (state.apiConnected || state.authToken) {
-    const hydrated = await hydrateStoreFromApi();
+    const hydrated = await hydrateStoreFromApi(sections);
     if (hydrated) return true;
   }
 
@@ -3608,9 +3664,9 @@ async function reloadStoreFromPersistence() {
   return false;
 }
 
-async function refreshStoreForActiveSession() {
+async function refreshStoreForActiveSession(sections = null) {
   if (state.apiConnected || state.authToken) {
-    const hydrated = await hydrateStoreFromApi();
+    const hydrated = await hydrateStoreFromApi(sections);
     if (hydrated) return true;
   }
 
@@ -3628,7 +3684,7 @@ async function refreshSelectedClientProposal() {
     return;
   }
 
-  const reloaded = await reloadStoreFromPersistence();
+  const reloaded = await reloadStoreFromPersistence(["settings", "reservations"]);
   if (!reloaded) {
     showToast("Nao foi possivel atualizar. A API e o banco precisam estar ativos.", "error");
     return;
@@ -7457,7 +7513,7 @@ document.addEventListener("click", async (event) => {
   if (target.dataset.adminTab) {
     const nextAdminTab = target.dataset.adminTab;
     await runNavigationLoading(`Abrindo ${adminTabLabel(nextAdminTab)} e atualizando dados do portal.`, async () => {
-      await refreshStoreForActiveSession();
+      await refreshStoreForActiveSession(storeSectionsForAdminTab(nextAdminTab));
       state.adminTab = nextAdminTab;
     });
     if (!target.dataset.openReservation && !target.dataset.openFinance) {
@@ -7467,7 +7523,7 @@ document.addEventListener("click", async (event) => {
   if (target.dataset.viewClientProposal) {
     const proposalId = target.dataset.viewClientProposal;
     await runNavigationLoading("Abrindo proposta e conferindo dados atualizados.", async () => {
-      await refreshStoreForActiveSession();
+      await refreshStoreForActiveSession(["settings", "reservations"]);
       openClientProposal(proposalId);
     });
     return;
@@ -7478,7 +7534,7 @@ document.addEventListener("click", async (event) => {
   }
   if (target.dataset.startClientQuote !== undefined) {
     await runNavigationLoading("Abrindo novo orçamento e conferindo pendências.", async () => {
-      await refreshStoreForActiveSession();
+      await refreshStoreForActiveSession(["settings", "catalog", "reservations"]);
       startNewClientQuote();
     });
     return;
@@ -7486,7 +7542,7 @@ document.addEventListener("click", async (event) => {
   if (target.dataset.clientTab) {
     const nextClientTab = target.dataset.clientTab;
     await runNavigationLoading(`Abrindo ${clientTabLabel(nextClientTab)} e atualizando dados.`, async () => {
-      await refreshStoreForActiveSession();
+      await refreshStoreForActiveSession(storeSectionsForClientTab(nextClientTab));
       if (state.user?.role === "client" && nextClientTab === "orcamento") {
         startNewClientQuote();
         return;
