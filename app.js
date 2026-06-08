@@ -527,7 +527,7 @@ async function hydrateStoreFromApi(sections = null) {
       state.lastStoreSyncAt = Date.now();
       return true;
     } catch {
-      state.apiConnected = false;
+      if (!state.authToken) state.apiConnected = false;
       return false;
     } finally {
       if (activeStoreRefresh?.promise === refreshPromise) activeStoreRefresh = null;
@@ -602,8 +602,12 @@ function ensureLocalFallbackAvailable() {
   throw error;
 }
 
+function canAttemptApiMutation() {
+  return state.apiConnected || Boolean(state.authToken);
+}
+
 async function syncReservationActionWithApi(id, action, values = {}) {
-  if (!state.apiConnected) return ensureLocalFallbackAvailable();
+  if (!canAttemptApiMutation()) return ensureLocalFallbackAvailable();
 
   const apiResult = await reservationActionWithApi(id, action, values);
   if (!apiResult.available) {
@@ -624,7 +628,7 @@ async function syncReservationActionWithApi(id, action, values = {}) {
 }
 
 async function syncClientWithApi(client) {
-  if (!state.apiConnected) return ensureLocalFallbackAvailable();
+  if (!canAttemptApiMutation()) return ensureLocalFallbackAvailable();
 
   const apiResult = await apiMutationWithStore("/clients", {
     method: "POST",
@@ -656,7 +660,7 @@ async function createClientRegistrationRequestWithApi(client) {
 }
 
 async function approveClientRegistrationWithApi(clientId) {
-  if (!state.apiConnected) return ensureLocalFallbackAvailable();
+  if (!canAttemptApiMutation()) return ensureLocalFallbackAvailable();
 
   const apiResult = await apiMutationWithStore(`/client-registration-requests/${encodeURIComponent(clientId)}/approve`, {
     method: "POST",
@@ -666,7 +670,7 @@ async function approveClientRegistrationWithApi(clientId) {
 }
 
 async function denyClientRegistrationWithApi(clientId, reason) {
-  if (!state.apiConnected) return ensureLocalFallbackAvailable();
+  if (!canAttemptApiMutation()) return ensureLocalFallbackAvailable();
 
   const apiResult = await apiMutationWithStore(`/client-registration-requests/${encodeURIComponent(clientId)}/deny`, {
     method: "POST",
@@ -676,7 +680,7 @@ async function denyClientRegistrationWithApi(clientId, reason) {
 }
 
 async function deleteClientWithApi(clientId) {
-  if (!state.apiConnected) return ensureLocalFallbackAvailable();
+  if (!canAttemptApiMutation()) return ensureLocalFallbackAvailable();
 
   const apiResult = await apiMutationWithStore(`/clients/${encodeURIComponent(clientId)}`, {
     method: "DELETE",
@@ -685,7 +689,7 @@ async function deleteClientWithApi(clientId) {
 }
 
 async function syncInventoryItemWithApi(originalCode, item) {
-  if (!state.apiConnected) return ensureLocalFallbackAvailable();
+  if (!canAttemptApiMutation()) return ensureLocalFallbackAvailable();
 
   const apiResult = await apiMutationWithStore("/inventory-items", {
     method: "POST",
@@ -695,7 +699,7 @@ async function syncInventoryItemWithApi(originalCode, item) {
 }
 
 async function deleteInventoryItemWithApi(code) {
-  if (!state.apiConnected) return ensureLocalFallbackAvailable();
+  if (!canAttemptApiMutation()) return ensureLocalFallbackAvailable();
 
   const apiResult = await apiMutationWithStore(`/inventory-items/${encodeURIComponent(code)}`, {
     method: "DELETE",
@@ -704,7 +708,7 @@ async function deleteInventoryItemWithApi(code) {
 }
 
 async function syncKitAddonWithApi(kind, entry) {
-  if (!state.apiConnected) return ensureLocalFallbackAvailable();
+  if (!canAttemptApiMutation()) return ensureLocalFallbackAvailable();
 
   const path = kind === "kit" ? "/kits" : "/addons";
   const bodyKey = kind === "kit" ? "kit" : "addon";
@@ -716,7 +720,7 @@ async function syncKitAddonWithApi(kind, entry) {
 }
 
 async function deleteKitAddonWithApi(kind, id) {
-  if (!state.apiConnected) return ensureLocalFallbackAvailable();
+  if (!canAttemptApiMutation()) return ensureLocalFallbackAvailable();
 
   const path = kind === "kit" ? `/kits/${encodeURIComponent(id)}` : `/addons/${encodeURIComponent(id)}`;
   const apiResult = await apiMutationWithStore(path, {
@@ -726,7 +730,7 @@ async function deleteKitAddonWithApi(kind, id) {
 }
 
 async function syncThemeWithApi(theme) {
-  if (!state.apiConnected) return ensureLocalFallbackAvailable();
+  if (!canAttemptApiMutation()) return ensureLocalFallbackAvailable();
 
   const apiResult = await apiMutationWithStore("/themes", {
     method: "POST",
@@ -736,7 +740,7 @@ async function syncThemeWithApi(theme) {
 }
 
 async function deleteThemeWithApi(id) {
-  if (!state.apiConnected) return ensureLocalFallbackAvailable();
+  if (!canAttemptApiMutation()) return ensureLocalFallbackAvailable();
 
   const apiResult = await apiMutationWithStore(`/themes/${encodeURIComponent(id)}`, {
     method: "DELETE",
@@ -745,7 +749,7 @@ async function deleteThemeWithApi(id) {
 }
 
 async function saveSignatureWithApi(id, signerName, signatureData) {
-  if (!state.apiConnected) return ensureLocalFallbackAvailable();
+  if (!canAttemptApiMutation()) return ensureLocalFallbackAvailable();
 
   const apiResult = await apiMutationWithStore(`/reservations/${encodeURIComponent(id)}/signature`, {
     method: "POST",
@@ -755,7 +759,7 @@ async function saveSignatureWithApi(id, signerName, signatureData) {
 }
 
 async function uploadPhysicalContractWithApi(id, file) {
-  if (!state.apiConnected) return ensureLocalFallbackAvailable();
+  if (!canAttemptApiMutation()) return ensureLocalFallbackAvailable();
 
   const apiResult = await apiMutationWithStore(`/reservations/${encodeURIComponent(id)}/physical-contract`, {
     method: "POST",
@@ -769,7 +773,7 @@ async function uploadPhysicalContractWithApi(id, file) {
 }
 
 async function createReservationPaymentWithApi(id, payment) {
-  if (!state.apiConnected) return ensureLocalFallbackAvailable();
+  if (!canAttemptApiMutation()) return ensureLocalFallbackAvailable();
 
   const apiResult = await apiMutationWithStore(`/reservations/${encodeURIComponent(id)}/payments`, {
     method: "POST",
@@ -779,7 +783,7 @@ async function createReservationPaymentWithApi(id, payment) {
 }
 
 async function syncServiceFeesWithApi(serviceFees) {
-  if (!state.apiConnected) return ensureLocalFallbackAvailable();
+  if (!canAttemptApiMutation()) return ensureLocalFallbackAvailable();
 
   const apiResult = await apiMutationWithStore("/settings/service-fees", {
     method: "POST",
@@ -789,7 +793,7 @@ async function syncServiceFeesWithApi(serviceFees) {
 }
 
 async function syncPaymentMethodWithApi(paymentMethodEntry) {
-  if (!state.apiConnected) return ensureLocalFallbackAvailable();
+  if (!canAttemptApiMutation()) return ensureLocalFallbackAvailable();
 
   const apiResult = await apiMutationWithStore("/payment-methods", {
     method: "POST",
@@ -799,7 +803,7 @@ async function syncPaymentMethodWithApi(paymentMethodEntry) {
 }
 
 async function togglePaymentMethodWithApi(id, enabled) {
-  if (!state.apiConnected) return ensureLocalFallbackAvailable();
+  if (!canAttemptApiMutation()) return ensureLocalFallbackAvailable();
 
   const apiResult = await apiMutationWithStore(`/payment-methods/${encodeURIComponent(id)}/enabled`, {
     method: "POST",
@@ -809,7 +813,7 @@ async function togglePaymentMethodWithApi(id, enabled) {
 }
 
 async function syncAccessWithApi(user) {
-  if (!state.apiConnected) return ensureLocalFallbackAvailable();
+  if (!canAttemptApiMutation()) return ensureLocalFallbackAvailable();
 
   const apiResult = await apiMutationWithStore("/users", {
     method: "POST",
@@ -819,7 +823,7 @@ async function syncAccessWithApi(user) {
 }
 
 async function toggleAccessWithApi(userId, enabled) {
-  if (!state.apiConnected) return ensureLocalFallbackAvailable();
+  if (!canAttemptApiMutation()) return ensureLocalFallbackAvailable();
 
   const apiResult = await apiMutationWithStore(`/users/${encodeURIComponent(userId)}/enabled`, {
     method: "POST",
