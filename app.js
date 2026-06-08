@@ -6580,6 +6580,7 @@ async function submitQuote() {
     contractGeneratedAt: null,
     signature: null,
   };
+  let savedReservationId = entry.id;
   if (state.apiConnected) {
     const apiResult = await createReservationWithApi(client, entry, selectedAddons);
     if (!apiResult.available) {
@@ -6593,6 +6594,9 @@ async function submitQuote() {
       return false;
     }
 
+    savedReservationId = apiResult.payload?.id || entry.id;
+    entry.id = savedReservationId;
+
     if (apiResult.payload?.store) {
       applyApiStore(apiResult.payload.store);
     } else {
@@ -6602,7 +6606,7 @@ async function submitQuote() {
     store.reservations.push(entry);
     saveStore();
   }
-  state.selectedReservationId = entry.id;
+  state.selectedReservationId = savedReservationId;
   if (adminQuoteMode) {
     state.clientStep = 4;
     state.newQuoteMode = false;
@@ -6619,7 +6623,7 @@ async function submitQuote() {
     state.selectedThemeId = "";
     state.draft = { ...defaultDraft(), clientId: state.draft.clientId, name: state.draft.name, cpf: state.draft.cpf, phone: state.draft.phone, whatsapp: state.draft.whatsapp, email: state.draft.email, address: state.draft.address };
   }
-  return { id: entry.id };
+  return { id: savedReservationId };
 }
 
 function findDuplicateReservation(clientId, kitId, eventDate) {
