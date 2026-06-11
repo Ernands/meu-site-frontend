@@ -2911,12 +2911,12 @@ function renderStepSelectTheme() {
         </div>
         ${themes.length ? "" : `<div class="small-note">Nenhum tema cadastrado ativo no momento.</div>`}
         <div class="field full-span theme-custom-field">
-          <label for="customTheme">Tema desejado</label>
+          <label class="custom-theme-label" for="customTheme">Tema desejado</label>
           <input id="customTheme" data-draft="customTheme" type="text" value="${escapeHtml(state.draft.customTheme || "")}" placeholder="Ex.: Dinossauro, Borboletas, Jardim encantado" ${customMode ? "required" : "disabled"} />
           ${
             customMode
               ? `<div class="hint-box">O tema desejado será personalizado, feito manualmente. Em caso de dúvidas, entre em contato pelo WhatsApp.</div>`
-              : `<div class="small-note">Marque "Não tem na lista de temas" para digitar manualmente.</div>`
+              : `<div class="small-note">Marque "Escolher Tema FORA da lista (Personalizado)" para digitar manualmente.</div>`
           }
         </div>
         <div class="actions">
@@ -2943,10 +2943,10 @@ function renderClientThemeCard(themeEntry) {
 function renderCustomThemeCard() {
   const selected = isCustomThemeMode();
   return `
-    <label class="item-card ${selected ? "selected" : ""}" data-theme-card-custom>
+    <label class="item-card custom-theme-card ${selected ? "selected" : ""}" data-theme-card-custom>
       <div class="media-placeholder">Tema</div>
       <input type="radio" name="theme" data-theme-custom="true" ${selected ? "checked" : ""} />
-      <h4>Não tem na lista de temas</h4>
+      <h4>Escolher Tema FORA da lista (Personalizado)</h4>
       <div class="item-meta">Escolha esta opção para informar um tema personalizado.</div>
     </label>
   `;
@@ -3044,6 +3044,13 @@ function renderLockedReservationActions(reservation) {
 
 function renderSubmittedReservationView(reservation) {
   const addonRows = (reservation.addonIds || []).map((id) => store.addons.find((entry) => entry.id === id)).filter(Boolean);
+  const kitItemRows = (reservation.itemCodes || [])
+    .map((code) => findItem(code))
+    .filter(Boolean);
+  const kitItemsFallback = String(store.kits.find((kitEntry) => kitEntry.id === reservation.kitId)?.itemsText || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
   return `
     <div class="submitted-reservation">
       <div>
@@ -3051,7 +3058,7 @@ function renderSubmittedReservationView(reservation) {
         <h4>${escapeHtml(reservation.id)} · ${escapeHtml(reservation.kitName)}</h4>
       </div>
       <div class="summary-list">
-        <div class="summary-row"><span>Data do evento</span><strong>${dateLabel(reservation.eventDate)}</strong></div>
+        <div class="summary-row event-date-highlight"><span>Data do evento</span><strong>${dateLabel(reservation.eventDate)}</strong></div>
         <div class="summary-row"><span>Tema</span><strong>${escapeHtml(reservationThemeLabel(reservation))}</strong></div>
         <div class="summary-row"><span>Devolução</span><strong>${dateLabel(reservation.returnDate)}</strong></div>
         <div class="summary-row"><span>Status</span><strong>${journeyStatusPill(reservation.status)}</strong></div>
@@ -3060,6 +3067,16 @@ function renderSubmittedReservationView(reservation) {
         <div class="summary-row"><span>Comprovante</span><strong>${reservation.receiptName ? escapeHtml(reservation.receiptName) : "Não anexado"}</strong></div>
       </div>
       ${reservation.clientCorrectionNote ? `<div class="attention-box"><strong>Dados informados como divergentes</strong><p>${escapeHtml(reservation.clientCorrectionNote)}</p></div>` : ""}
+      <div>
+        <strong>Itens do kit</strong>
+        <ul class="item-list reservation-kit-item-list">
+          ${
+            kitItemRows.length
+              ? kitItemRows.map((entry) => `<li>${escapeHtml(formatItemLine(entry))}</li>`).join("")
+              : kitItemsFallback.map((line) => `<li>${escapeHtml(line)}</li>`).join("")
+          }
+        </ul>
+      </div>
       ${
         addonRows.length
           ? `<div><strong>Adicionais</strong><ul class="item-list">${addonRows.map((entry) => `<li>${escapeHtml(entry.name)} · ${money(entry.price)}</li>`).join("")}</ul></div>`
@@ -3288,12 +3305,13 @@ function pixQrCodeSrc(payload) {
 }
 
 function buildPixCopiaECola(methodEntry, amount) {
-  const pixKey = String(methodEntry.pixKey || store.company.pixKey || "").trim();
+  const rawPixKey = String(methodEntry.pixKey || store.company.pixKey || "").trim();
+  const pixKey = normalizePixKey(rawPixKey);
   if (!pixKey) return "";
 
   const merchantName = sanitizePixField(methodEntry.pixName || store.company.pixName || store.company.name || "ATELIE LICA", 25);
   const merchantCity = sanitizePixField(methodEntry.pixCity || "PARNAIBA", 15);
-  const txid = sanitizePixField(state.selectedReservationId || state.user?.clientId || "SINAL", 25);
+  const txid = sanitizePixTxid(state.selectedReservationId || state.user?.clientId || "SINAL");
   const merchantAccount = emvField("00", "br.gov.bcb.pix") + emvField("01", pixKey) + emvField("02", "SINAL RESERVA");
   const payload =
     emvField("00", "01") +
@@ -3310,6 +3328,14 @@ function buildPixCopiaECola(methodEntry, amount) {
   return `${payload}${crc16(payload)}`;
 }
 
+function normalizePixKey(value) {
+  const key = String(value || "").trim();
+  const digits = onlyDigits(key);
+  if (key.startsWith("+") && digits) return `+${digits}`;
+  if (isValidCpf(key) || digits.length === 14) return digits;
+  return key;
+}
+
 function emvField(id, value) {
   const text = String(value || "");
   return `${id}${String(text.length).padStart(2, "0")}${text}`;
@@ -3322,6 +3348,10 @@ function sanitizePixField(value, limit) {
     .replace(/[^\x20-\x7E]/g, "")
     .toUpperCase()
     .slice(0, limit);
+}
+
+function sanitizePixTxid(value) {
+  return sanitizePixField(value, 25).replace(/[^A-Z0-9]/g, "") || "SINAL";
 }
 
 function crc16(payload) {
@@ -3346,7 +3376,7 @@ function renderJourneyBudgetSummary() {
       ${quote.assembly ? `<div class="summary-row"><span>Montagem</span><strong>${money(quote.assembly)}</strong></div>` : ""}
       ${quote.returnService ? `<div class="summary-row"><span>Devolução</span><strong>${money(quote.returnService)}</strong></div>` : ""}
       <div class="summary-row total"><strong>Valor Total</strong><strong>${money(quote.total)}</strong></div>
-      <div class="hint-box">Sinal de ${money(quote.deposit)}. O Ateliê LICA Festas confirma o pagamento do sinal e cria a Reserva e libera o contrato para assinatura.</div>
+      <div class="hint-box">Sinal de <strong class="signal-amount">${money(quote.deposit)}</strong>. O Ateliê LICA Festas confirma o pagamento do sinal e cria a Reserva e libera o contrato para assinatura.</div>
       <div>${journeyStatusPill("Aguardando confirmação de sinal")}</div>
     </div>
   `;
@@ -4138,7 +4168,7 @@ function renderBudgetSummary(selectedKit) {
       <div class="summary-row"><span>Adicionais selecionados</span><strong>${money(quote.additions)}</strong></div>
       <div class="summary-row"><span>Serviços</span><strong>${money(quote.serviceFee)}</strong></div>
       <div class="summary-row total"><strong>Valor Total</strong><strong>${money(quote.total)}</strong></div>
-      <div class="hint-box">Sinal de ${money(quote.deposit)}. O Ateliê LICA Festas confirma o pagamento do sinal e libera o contrato para assinatura.</div>
+      <div class="hint-box">Sinal de <strong class="signal-amount">${money(quote.deposit)}</strong>. O Ateliê LICA Festas confirma o pagamento do sinal e libera o contrato para assinatura.</div>
     </div>
   `;
 }
@@ -4605,7 +4635,7 @@ function renderFinanceDetail(entry) {
           <div class="hint-box full-span">Total pendente atual: ${money(finance.finalDue)}.</div>
         </div>
         <div class="actions finance-expanded-actions">
-          <button class="primary-button" data-save-finance="${escapeAttr(entry.id)}" ${pendingDisabledAttr()}>${pendingLabel("save-reservation-finance", "Salvar financeiro", "Salvando financeiro...")}</button>
+          <button class="primary-button" data-save-finance="${escapeAttr(entry.id)}" ${pendingDisabledAttr()}>${pendingLabel("save-reservation-finance", "Salvar", "Salvando...")}</button>
           <button class="secondary-button" data-new-payment="${escapeAttr(entry.id)}">Novo pagamento</button>
           <button class="secondary-button" data-open-reservation="${escapeAttr(entry.id)}" data-jump-reservations="true">Abrir reserva</button>
         </div>
@@ -4724,8 +4754,8 @@ function renderReservationDetail(entry) {
     <div class="reservation-detail">
       ${renderReservationHeaderCard(entry, finance)}
       ${renderClientCorrectionAlert(entry)}
-      ${renderReservationFinancialSummary(entry, finance)}
       ${renderReservationActionPanel(entry, confirmDepositDisabled)}
+      ${renderReservationFinancialSummary(entry, finance)}
       ${renderReservationEventBlock(entry)}
       ${renderReservationItemsCard(entry)}
       ${renderReceiptAdminBlock(entry)}
@@ -4869,7 +4899,7 @@ function renderReservationActionPanel(entry, confirmDepositDisabled) {
         ${isReservationContractAvailable(entry) ? `<button class="secondary-button" data-open-contract="${escapeAttr(entry.id)}">Ver contrato</button>` : `<span class="small-note">Contrato liberado após confirmação do sinal.</span>`}
         <button class="secondary-button" data-open-checklist="${escapeAttr(entry.id)}">Gerar Check List</button>
         <button class="secondary-button" data-new-payment="${escapeAttr(entry.id)}">Novo pagamento</button>
-        <button class="secondary-button" data-save-reservation-status="${escapeAttr(entry.id)}" ${pendingDisabledAttr()}>${pendingLabel("save-status", "Salvar financeiro", "Salvando...")}</button>
+        <button class="secondary-button" data-save-reservation-status="${escapeAttr(entry.id)}" ${pendingDisabledAttr()}>${pendingLabel("save-status", "Salvar", "Salvando...")}</button>
         <button class="danger-button" data-cancel-reservation="${escapeAttr(entry.id)}" ${pendingDisabledAttr()}>${pendingLabel("cancel-reservation", "Cancelar reserva", "Cancelando...")}</button>
       </div>
     </section>
@@ -4896,7 +4926,7 @@ function renderReservationItemsCard(entry) {
         </div>
         <span class="small-note">${includedCount} item(ns) no kit · ${additionalCount} adicional(is)</span>
       </div>
-      <details class="reservation-accordion">
+      <details class="reservation-accordion" open>
         <summary><span>Itens inclusos no kit</span><strong>${includedCount} item(ns)</strong></summary>
         ${
           kitText
@@ -4904,7 +4934,7 @@ function renderReservationItemsCard(entry) {
             : `<ul class="item-list">${included.map((entryItem) => `<li>${escapeHtml(formatItemLine(entryItem))}</li>`).join("")}</ul>`
         }
       </details>
-      <details class="reservation-accordion">
+      <details class="reservation-accordion" open>
         <summary><span>Adicionais selecionados</span><strong>${additionalCount} adicional(is)</strong></summary>
         ${additionalCount ? `<ul class="item-list">${addonList}</ul>` : `<div class="small-note">Sem adicionais nessa reserva.</div>`}
       </details>
@@ -4914,7 +4944,7 @@ function renderReservationItemsCard(entry) {
 
 function renderReservationClosingBlock(entry, finance = reservationFinancials(entry)) {
   return `
-    <details class="reservation-info-card reservation-closing-card">
+    <details class="reservation-info-card reservation-closing-card" open>
       <summary class="reservation-card-heading">
         <div>
           <span class="detail-eyebrow">Fechamento financeiro</span>
@@ -5495,12 +5525,11 @@ function renderContractPaper(entry, canSign) {
     <article class="contract-paper">
       <h3>Contrato de locação de kit festa</h3>
       <p><strong>Contratante:</strong> ${escapeHtml(client?.name || "")}, CPF ${escapeHtml(client?.cpf || "")}, telefone ${escapeHtml(client?.phone || "")}.</p>
-      <p><strong>Contratada:</strong> ${escapeHtml(store.company.name)}, representada por ${escapeHtml(store.company.pixName)}.</p>
+      <p><strong>Contratada:</strong> Atelie LICA Festas, representada por Tamara Soares dos Santos, CPF 115.024.494-12.</p>
       <p><strong>Objeto:</strong> ${escapeHtml(contractObjectText(entry))}</p>
       <p><strong>Itens locados:</strong></p>
       ${renderReservationItemSections(entry)}
       ${renderContractValues(entry)}
-      ${renderContractPaymentSignal(entry)}
       ${renderContractGeneralConditions()}
       <p><strong>Assinatura digital:</strong> a assinatura abaixo registra aceite dos termos deste contrato.</p>
       ${renderContractSignatureBlock(entry, canSign)}
@@ -5529,7 +5558,15 @@ function renderSignatureEvidence(entry) {
     `;
   }
 
-  return `<p><strong>Assinado por:</strong> ${escapeHtml(signature.signer)} em ${dateTimeLabel(signature.signedAt)}</p><img class="signature-preview" src="${safeImageSrc(signature.image)}" alt="Assinatura digital" />`;
+  const imageSrc = safeImageSrc(signature.image);
+  return `
+    <p><strong>Assinado por:</strong> ${escapeHtml(signature.signer)} em ${dateTimeLabel(signature.signedAt)}</p>
+    ${
+      imageSrc
+        ? `<img class="signature-preview" src="${imageSrc}" alt="Assinatura digital" />`
+        : `<div class="hint-box signature-missing">Assinatura registrada, mas a imagem não está disponível para visualização.</div>`
+    }
+  `;
 }
 
 function renderPhysicalContractUpload(reservation) {
@@ -6374,9 +6411,11 @@ function financialNumber(value, fallback = 0) {
 function reservationFinancials(entry) {
   const total = financialNumber(entry.total);
   const deposit = financialNumber(entry.deposit);
+  const signalDue = financialNumber(entry.signalDue);
   const defaultBalance = Math.max(0, total - deposit);
   const hasBalanceDue = entry.balanceDue !== undefined && entry.balanceDue !== null && entry.balanceDue !== "";
   const balanceDue = hasBalanceDue ? financialNumber(entry.balanceDue) : defaultBalance;
+  const signalPending = hasBalanceDue ? Math.max(0, signalDue - deposit) : 0;
   const damageFee = financialNumber(entry.damageFee);
   const replacementFee = financialNumber(entry.replacementFee);
   const additionalPayments = reservationAdditionalPaymentsTotal(entry);
@@ -6390,7 +6429,8 @@ function reservationFinancials(entry) {
     replacementFee,
     extraCharges,
     additionalPayments,
-    finalDue: Math.max(0, balanceDue + extraCharges - additionalPayments),
+    signalPending,
+    finalDue: Math.max(0, balanceDue + signalPending + extraCharges - additionalPayments),
   };
 }
 
@@ -7221,18 +7261,14 @@ function escapeAttr(value) {
 
 function safeApiFileUrl(value) {
   const src = String(value || "");
-  const filePathPattern = /^\/api\/files\/[\w-]+\/content$/i;
+  const filePathPattern = /^\/api\/files\/[^/?#]+\/content$/i;
   const withFileToken = (url) => {
     if (state.authToken) url.searchParams.set("fileToken", state.authToken);
     return url.href;
   };
 
-  if (filePathPattern.test(src)) {
-    return withFileToken(new URL(src, apiBaseUrl));
-  }
-
   try {
-    const url = new URL(src);
+    const url = new URL(src, apiBaseUrl);
     const apiUrl = new URL(apiBaseUrl);
     if (url.origin === apiUrl.origin && filePathPattern.test(url.pathname)) {
       return withFileToken(url);

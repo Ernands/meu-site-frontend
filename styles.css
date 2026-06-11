@@ -1004,6 +1004,18 @@ button:disabled {
   line-height: 1.45;
 }
 
+.custom-theme-card .item-meta,
+.custom-theme-label,
+.signal-amount {
+  color: #b42318;
+  font-weight: 800;
+}
+
+.event-date-highlight {
+  border-color: rgba(201, 139, 158, 0.28);
+  background: rgba(201, 139, 158, 0.14);
+}
+
 .price {
   color: var(--rose);
   font-weight: 900;
@@ -1233,6 +1245,10 @@ th {
 
 .item-list li {
   margin: 4px 0;
+}
+
+.reservation-kit-item-list li {
+  line-height: 1.45;
 }
 
 .empty-state {
@@ -1547,6 +1563,10 @@ th {
   border: 1px solid #d7dee8;
   border-radius: 7px;
   background: #fff;
+}
+
+.signature-missing {
+  max-width: 520px;
 }
 
 .actions {
