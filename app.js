@@ -138,6 +138,7 @@ const authStorage = sessionStorage;
 const apiBaseUrl = window.ATELIE_LICA_API_BASE_URL || "https://minha-api-backend-fuf9.onrender.com/api";
 const apiTimeoutMs = 15000;
 const localFallbackEnabled = false;
+const customThemeConfigId = "tema-personalizado";
 const catalogPhotoUploadConfig = {
   allowedTypes: ["image/jpeg", "image/jpg", "image/png", "image/webp"],
   maxOriginalBytes: 8 * 1024 * 1024,
@@ -173,6 +174,7 @@ let state = {
   clientStep: 1,
   mediaIndex: {},
   itemSearch: "",
+  inventoryPickerSearch: "",
   categoryFilter: "Todas",
   modal: null,
   toast: null,
@@ -876,11 +878,13 @@ function normalizeStore(nextStore) {
   nextStore.kits = (nextStore.kits || []).map(normalizeKit);
   nextStore.addons = (nextStore.addons || []).map(normalizeAddon);
   nextStore.themes = (nextStore.themes || []).map(normalizeTheme);
+  ensureCustomThemeConfig(nextStore);
   nextStore.paymentMethods = (nextStore.paymentMethods || []).map(normalizePaymentMethod);
   nextStore.reservations = (nextStore.reservations || []).map(normalizeReservation);
   const usersById = new Map((nextStore.users || []).map((user) => [user.id, normalizeUser(user)]));
   nextStore.clients.forEach((client) => {
-    if ((client.registrationStatus || "Aprovado") === "Aprovado") {
+    const existingUser = usersById.get(client.id);
+    if (!existingUser && (client.registrationStatus || "Aprovado") === "Aprovado") {
       usersById.set(client.id, clientToUser(client, usersById.get(client.id)));
     }
   });
@@ -934,6 +938,40 @@ function normalizeTheme(themeEntry) {
     enabled: themeEntry.enabled !== false,
     colors: themeEntry.colors || ["#fff0f4", "#b83b5e", "#ffffff"],
   };
+}
+
+function defaultCustomThemeConfig() {
+  return normalizeTheme({
+    id: customThemeConfigId,
+    name: "Escolher Tema FORA da lista (Personalizado)",
+    description: "Escolha esta opcao para informar um tema personalizado.",
+    photos: [],
+    enabled: true,
+    colors: ["#fff0f4", "#c97b8b", "#fffdf9"],
+  });
+}
+
+function isCustomThemeConfig(themeEntry) {
+  return themeEntry?.id === customThemeConfigId;
+}
+
+function ensureCustomThemeConfig(targetStore = store) {
+  const themes = targetStore.themes || [];
+  const index = themes.findIndex(isCustomThemeConfig);
+  if (index >= 0) {
+    themes[index] = normalizeTheme({
+      ...defaultCustomThemeConfig(),
+      ...themes[index],
+      id: customThemeConfigId,
+    });
+  } else {
+    themes.unshift(defaultCustomThemeConfig());
+  }
+  targetStore.themes = themes;
+}
+
+function getCustomThemeConfig() {
+  return store.themes.find(isCustomThemeConfig) || defaultCustomThemeConfig();
 }
 
 function normalizePaymentMethod(methodEntry = {}) {
@@ -1071,6 +1109,7 @@ function clientToUser(client, existingUser = {}) {
 
 function syncClientUser(client) {
   const existing = store.users.find((entry) => entry.id === client.id);
+  if (existing && existing.role !== "client") return;
   const user = clientToUser(client, existing);
   const index = store.users.findIndex((entry) => entry.id === user.id);
   if (index >= 0) store.users[index] = user;
@@ -1654,6 +1693,7 @@ function nextThemeId() {
 async function saveThemeFromForm(form) {
   const formData = new FormData(form);
   const existingId = form.dataset.id;
+  const isCustom = existingId === customThemeConfigId;
   let existingPhotos = [];
   try {
     existingPhotos = JSON.parse(String(formData.get("existingPhotos") || "[]"));
@@ -1662,12 +1702,12 @@ async function saveThemeFromForm(form) {
   }
   const photos = await prepareCatalogPhotos(form.querySelector('[name="photos"]'), existingPhotos, 3);
   const entry = normalizeTheme({
-    id: existingId || nextThemeId(),
-    name: String(formData.get("name") || "").trim(),
+    id: isCustom ? customThemeConfigId : existingId || nextThemeId(),
+    name: isCustom ? defaultCustomThemeConfig().name : String(formData.get("name") || "").trim(),
     description: String(formData.get("description") || "").trim(),
     photos,
     enabled: formData.get("enabled") === "on",
-    colors: store.themes.find((themeEntry) => themeEntry.id === existingId)?.colors || ["#fff0f4", "#b83b5e", "#ffffff"],
+    colors: store.themes.find((themeEntry) => themeEntry.id === existingId)?.colors || (isCustom ? defaultCustomThemeConfig().colors : ["#fff0f4", "#b83b5e", "#ffffff"]),
   });
 
   if (await syncThemeWithApi(entry)) {
@@ -1690,6 +1730,10 @@ async function toggleTheme(id) {
   const previousEnabled = entry.enabled;
   entry.enabled = !entry.enabled;
   if (state.selectedThemeId === id && entry.enabled === false) state.selectedThemeId = "";
+  if (isCustomThemeConfig(entry) && entry.enabled === false) {
+    state.draft.customThemeMode = false;
+    state.draft.customTheme = "";
+  }
 
   try {
     if (await syncThemeWithApi(entry)) {
@@ -1710,6 +1754,10 @@ async function toggleTheme(id) {
 async function deleteTheme(id) {
   const entry = store.themes.find((row) => row.id === id);
   if (!entry) return;
+  if (isCustomThemeConfig(entry)) {
+    showToast("O tema personalizado nao pode ser excluido. Voce pode desabilitar ou editar fotos e descricao.", "warning");
+    return;
+  }
   if (!confirm(`Excluir ${entry.name}?`)) return;
 
   if (await deleteThemeWithApi(id)) {
@@ -2899,17 +2947,19 @@ function renderClientKitCard(kitEntry) {
 
 function renderStepSelectTheme() {
   const themes = getActiveThemes();
-  const customMode = isCustomThemeMode();
+  const customThemeMarkup = renderCustomThemeCard();
+  const activeThemeCount = themes.length + (customThemeMarkup ? 1 : 0);
+  const customMode = isCustomThemeMode() && getCustomThemeConfig().enabled !== false;
   const hasTheme = Boolean(themeSelectionName());
   return `
     <section class="panel journey-step-panel" data-journey-step-panel>
-      <div class="panel-header"><h3>2. Escolher Tema/Kit</h3><span class="small-note">${themes.length} tema(s) disponíveis</span></div>
+      <div class="panel-header"><h3>2. Escolher Tema/Kit</h3><span class="small-note">${activeThemeCount} tema(s) disponíveis</span></div>
       <div class="panel-body">
         <div class="item-grid">
           ${themes.map(renderClientThemeCard).join("")}
-          ${renderCustomThemeCard()}
+          ${customThemeMarkup}
         </div>
-        ${themes.length ? "" : `<div class="small-note">Nenhum tema cadastrado ativo no momento.</div>`}
+        ${activeThemeCount ? "" : `<div class="small-note">Nenhum tema cadastrado ativo no momento.</div>`}
         <div class="field full-span theme-custom-field">
           <label class="custom-theme-label" for="customTheme">Tema desejado</label>
           <input id="customTheme" data-draft="customTheme" type="text" value="${escapeHtml(state.draft.customTheme || "")}" placeholder="Ex.: Dinossauro, Borboletas, Jardim encantado" ${customMode ? "required" : "disabled"} />
@@ -2940,7 +2990,7 @@ function renderClientThemeCard(themeEntry) {
   `;
 }
 
-function renderCustomThemeCard() {
+function renderCustomThemeCardLegacy() {
   const selected = isCustomThemeMode();
   return `
     <label class="item-card custom-theme-card ${selected ? "selected" : ""}" data-theme-card-custom>
@@ -2948,6 +2998,20 @@ function renderCustomThemeCard() {
       <input type="radio" name="theme" data-theme-custom="true" ${selected ? "checked" : ""} />
       <h4>Escolher Tema FORA da lista (Personalizado)</h4>
       <div class="item-meta">Escolha esta opção para informar um tema personalizado.</div>
+    </label>
+  `;
+}
+
+function renderCustomThemeCard() {
+  const config = getCustomThemeConfig();
+  if (config.enabled === false) return "";
+  const selected = isCustomThemeMode();
+  return `
+    <label class="item-card custom-theme-card ${selected ? "selected" : ""}" data-theme-card-custom>
+      <div data-theme-media>${renderMediaCarousel("theme", config)}</div>
+      <input type="radio" name="theme" data-theme-custom="true" ${selected ? "checked" : ""} />
+      <h4>${escapeHtml(config.name)}</h4>
+      <div class="item-meta">${escapeHtml(config.description || "Escolha esta opcao para informar um tema personalizado.")}</div>
     </label>
   `;
 }
@@ -3505,7 +3569,7 @@ function getActiveAddons() {
 }
 
 function getActiveThemes() {
-  return store.themes.filter((themeEntry) => themeEntry.enabled !== false);
+  return store.themes.filter((themeEntry) => !isCustomThemeConfig(themeEntry) && themeEntry.enabled !== false);
 }
 
 function getPaymentMethods() {
@@ -3543,7 +3607,10 @@ function isCustomThemeMode() {
 }
 
 function themeSelectionName() {
-  return isCustomThemeMode() ? state.draft.customTheme?.trim() || "" : getSelectedTheme()?.name || "";
+  if (isCustomThemeMode()) {
+    return getCustomThemeConfig().enabled === false ? "" : state.draft.customTheme?.trim() || "";
+  }
+  return getSelectedTheme()?.name || "";
 }
 
 function reservationThemeLabel(entry) {
@@ -5328,7 +5395,7 @@ function renderAdminKitAddons() {
   `;
 }
 
-function renderAdminThemes() {
+function renderAdminThemesLegacy() {
   return `
     <section class="section-title">
       <div>
@@ -5348,7 +5415,7 @@ function renderAdminThemes() {
   `;
 }
 
-function renderThemeAdminRow(themeEntry) {
+function renderThemeAdminRowLegacy(themeEntry) {
   return `
     <tr>
       <td><strong>${escapeHtml(themeEntry.name)}</strong></td>
@@ -5360,6 +5427,55 @@ function renderThemeAdminRow(themeEntry) {
           <button class="secondary-button" data-edit-theme="${escapeAttr(themeEntry.id)}">Editar</button>
           <button class="secondary-button" data-toggle-theme="${escapeAttr(themeEntry.id)}">${themeEntry.enabled ? "Desabilitar" : "Habilitar"}</button>
           <button class="danger-button" data-delete-theme="${escapeAttr(themeEntry.id)}">Excluir</button>
+        </div>
+      </td>
+    </tr>
+  `;
+}
+
+function renderAdminThemes() {
+  const themes = adminThemeRows();
+  return `
+    <section class="section-title">
+      <div>
+        <h2>Temas</h2>
+        <p>Cadastre os temas exibidos na jornada de reserva, incluindo a opcao personalizada.</p>
+      </div>
+      <button class="primary-button" data-action="new-theme">Criar tema</button>
+    </section>
+    <section class="panel">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Tema</th><th>Fotos</th><th>Descricao</th><th>Status</th><th>Acoes</th></tr></thead>
+          <tbody>${themes.map(renderThemeAdminRow).join("")}</tbody>
+        </table>
+      </div>
+    </section>
+  `;
+}
+
+function adminThemeRows() {
+  const custom = getCustomThemeConfig();
+  const themes = store.themes.filter((themeEntry) => !isCustomThemeConfig(themeEntry));
+  return [custom, ...themes];
+}
+
+function renderThemeAdminRow(themeEntry) {
+  const isCustom = isCustomThemeConfig(themeEntry);
+  return `
+    <tr>
+      <td>
+        <strong>${escapeHtml(themeEntry.name)}</strong>
+        ${isCustom ? `<br /><span class="status-pill paid">Tema personalizado</span>` : ""}
+      </td>
+      <td>${themeEntry.photos.length}/3</td>
+      <td>${escapeHtml(shortText(themeEntry.description, 120))}</td>
+      <td>${enabledPill(themeEntry.enabled)}</td>
+      <td>
+        <div class="row-actions">
+          <button class="secondary-button" data-edit-theme="${escapeAttr(themeEntry.id)}">Editar</button>
+          <button class="secondary-button" data-toggle-theme="${escapeAttr(themeEntry.id)}">${themeEntry.enabled ? "Desabilitar" : "Habilitar"}</button>
+          ${isCustom ? "" : `<button class="danger-button" data-delete-theme="${escapeAttr(themeEntry.id)}">Excluir</button>`}
         </div>
       </td>
     </tr>
@@ -6237,7 +6353,8 @@ function renderKitAddonModal() {
 function renderThemeModal() {
   const item = state.modal.id ? store.themes.find((entry) => entry.id === state.modal.id) : null;
   const model = item || createEmptyTheme();
-  const title = item ? "Editar tema" : "Criar tema";
+  const isCustom = isCustomThemeConfig(model);
+  const title = isCustom ? "Editar tema personalizado" : item ? "Editar tema" : "Criar tema";
   return `
     <div class="modal-backdrop">
       <section class="modal">
@@ -6250,10 +6367,11 @@ function renderThemeModal() {
         </div>
         <form class="modal-content" id="themeForm" data-id="${escapeAttr(item?.id || "")}" novalidate>
           ${renderFormAlert()}
+          ${isCustom ? `<div class="hint-box full-span">Este item controla a opcao "Escolher Tema FORA da lista (Personalizado)" exibida na jornada do cliente. Ele pode ser habilitado, desabilitado e receber fotos, mas nao pode ser excluido.</div>` : ""}
           <div class="form-grid">
             <div class="field${fieldErrorClass("name")}">
               <label for="theme-name">Nome do tema</label>
-              <input id="theme-name" name="name" type="text" value="${escapeHtml(model.name || "")}" required />
+              <input id="theme-name" name="name" type="text" value="${escapeHtml(model.name || "")}" ${isCustom ? "readonly" : ""} required />
               ${fieldErrorMessage("name")}
             </div>
             <div class="field full-span">
@@ -6303,7 +6421,7 @@ function renderKitAddonField(fieldDef, model) {
   `;
 }
 
-function renderInventorySelector(selectedCodes, isKit) {
+function renderInventorySelectorLegacy(selectedCodes, isKit) {
   const selected = new Set(selectedCodes || []);
   if (!store.inventory.length) {
     return `<div class="empty-state full-span">Cadastre itens no estoque antes de montar ${isKit ? "kits" : "adicionais"}.</div>`;
@@ -6330,6 +6448,101 @@ function renderInventorySelector(selectedCodes, isKit) {
       <div class="small-note">A discriminação exibida ao cliente será gerada a partir dos itens selecionados.</div>
     </div>
   `;
+}
+
+function renderInventorySelector(selectedCodes, isKit) {
+  const selected = new Set(selectedCodes || []);
+  if (!store.inventory.length) {
+    return `<div class="empty-state full-span">Cadastre itens no estoque antes de montar ${isKit ? "kits" : "adicionais"}.</div>`;
+  }
+
+  const searchTerm = String(state.inventoryPickerSearch || "").trim().toLowerCase();
+  const sortedItems = [...store.inventory].sort((a, b) => {
+    const aSelected = selected.has(a.codigo) ? 0 : 1;
+    const bSelected = selected.has(b.codigo) ? 0 : 1;
+    if (aSelected !== bSelected) return aSelected - bSelected;
+    return String(a.codigo || "").localeCompare(String(b.codigo || ""), "pt-BR", { numeric: true });
+  });
+  const visibleCount = searchTerm
+    ? sortedItems.filter((entry) => inventorySearchText(entry).includes(searchTerm)).length
+    : sortedItems.length;
+
+  return `
+    <div class="field full-span${fieldErrorClass("itemCodes")}">
+      <label>${isKit ? "Itens do kit no estoque" : "Item adicional no estoque"}</label>
+      <div class="inventory-picker-shell" data-inventory-picker>
+        <div class="inventory-picker-toolbar">
+          <div class="inventory-picker-summary">
+            <strong data-inventory-selected-count>${selected.size}</strong>
+            <span data-inventory-selected-label>${selected.size === 1 ? "item selecionado" : "itens selecionados"} de ${store.inventory.length}</span>
+          </div>
+          <label class="inventory-picker-search">
+            <span>Buscar item</span>
+            <input type="search" data-inventory-picker-search value="${escapeAttr(state.inventoryPickerSearch || "")}" placeholder="Codigo, nome, categoria ou cor" autocomplete="off" />
+          </label>
+        </div>
+        <div class="inventory-picker">
+          ${sortedItems.map((entry) => renderInventoryChoice(entry, selected, searchTerm)).join("")}
+          <div class="inventory-picker-empty ${visibleCount ? "hidden" : ""}" data-inventory-empty>Nenhum item encontrado.</div>
+        </div>
+      </div>
+      ${fieldErrorMessage("itemCodes")}
+      <div class="small-note">A discriminacao exibida ao cliente sera gerada a partir dos itens selecionados.</div>
+    </div>
+  `;
+}
+
+function renderInventoryChoice(entry, selected, searchTerm = "") {
+  const isSelected = selected.has(entry.codigo);
+  const isVisible = !searchTerm || inventorySearchText(entry).includes(searchTerm);
+  return `
+    <label class="inventory-choice ${isSelected ? "selected" : ""} ${isVisible ? "" : "hidden"}" data-inventory-choice data-search="${escapeAttr(inventorySearchText(entry))}">
+      <input type="checkbox" name="itemCodes" value="${escapeAttr(entry.codigo)}" ${isSelected ? "checked" : ""} />
+      <span class="inventory-choice-main">
+        <strong><span>${escapeHtml(entry.codigo)}</span>${escapeHtml(entry.name)}</strong>
+        <small>${escapeHtml(entry.category || "Sem categoria")} · ${escapeHtml(entry.theme || "Sem tema")} · Qtd. ${escapeHtml(entry.quantity ?? 0)} · ${money(entry.rent || 0)}</small>
+      </span>
+      <span class="inventory-choice-status">${escapeHtml(entry.status || "Sem status")}</span>
+    </label>
+  `;
+}
+
+function inventorySearchText(entry) {
+  return [
+    entry.codigo,
+    entry.name,
+    entry.category,
+    entry.theme,
+    entry.status,
+  ].filter(Boolean).join(" ").toLowerCase();
+}
+
+function updateInventoryPickerFilter(input) {
+  const root = input.closest("[data-inventory-picker]");
+  if (!root) return;
+  const term = String(input.value || "").trim().toLowerCase();
+  let visibleCount = 0;
+  root.querySelectorAll("[data-inventory-choice]").forEach((choice) => {
+    const visible = !term || String(choice.dataset.search || "").includes(term);
+    choice.classList.toggle("hidden", !visible);
+    if (visible) visibleCount += 1;
+  });
+  const emptyState = root.querySelector("[data-inventory-empty]");
+  if (emptyState) emptyState.classList.toggle("hidden", visibleCount > 0);
+}
+
+function updateInventoryPickerSelection(root) {
+  if (!root) return;
+  const checked = root.querySelectorAll('input[name="itemCodes"]:checked').length;
+  const total = root.querySelectorAll('input[name="itemCodes"]').length;
+  const counter = root.querySelector("[data-inventory-selected-count]");
+  const label = root.querySelector("[data-inventory-selected-label]");
+  if (counter) counter.textContent = String(checked);
+  if (label) label.textContent = `${checked === 1 ? "item selecionado" : "itens selecionados"} de ${total}`;
+  root.querySelectorAll("[data-inventory-choice]").forEach((choice) => {
+    const input = choice.querySelector('input[name="itemCodes"]');
+    choice.classList.toggle("selected", Boolean(input?.checked));
+  });
 }
 
 function renderPhotoPreview(photos) {
@@ -7535,11 +7748,13 @@ document.addEventListener("click", async (event) => {
   }
   if (target.dataset.action === "new-kit") {
     clearFormState();
+    state.inventoryPickerSearch = "";
     state.modal = { type: "kit-addon", kind: "kit" };
     render();
   }
   if (target.dataset.action === "new-addon") {
     clearFormState();
+    state.inventoryPickerSearch = "";
     state.modal = { type: "kit-addon", kind: "addon" };
     render();
   }
@@ -7763,11 +7978,13 @@ document.addEventListener("click", async (event) => {
   }
   if (target.dataset.editKit) {
     clearFormState();
+    state.inventoryPickerSearch = "";
     state.modal = { type: "kit-addon", kind: "kit", id: target.dataset.editKit };
     render();
   }
   if (target.dataset.editAddon) {
     clearFormState();
+    state.inventoryPickerSearch = "";
     state.modal = { type: "kit-addon", kind: "addon", id: target.dataset.editAddon };
     render();
   }
@@ -7891,6 +8108,10 @@ document.addEventListener("input", (event) => {
     state.itemSearch = target.value;
     render();
   }
+  if (target.dataset.inventoryPickerSearch !== undefined) {
+    state.inventoryPickerSearch = target.value;
+    updateInventoryPickerFilter(target);
+  }
   if (target.dataset.adminQuoteSearch !== undefined) {
     state.adminQuoteSearch = target.value;
     render();
@@ -7972,6 +8193,9 @@ document.addEventListener("change", async (event) => {
     if (target.checked && !state.selectedAdditions.includes(code)) state.selectedAdditions.push(code);
     if (!target.checked) state.selectedAdditions = state.selectedAdditions.filter((entry) => entry !== code);
     render();
+  }
+  if (target.name === "itemCodes" && target.closest("[data-inventory-picker]")) {
+    updateInventoryPickerSelection(target.closest("[data-inventory-picker]"));
   }
   if (target.dataset.themeId) {
     state.selectedThemeId = target.dataset.themeId;
