@@ -202,6 +202,7 @@ let state = {
     dateFrom: "",
     dateTo: "",
   },
+  agendaMonth: startOfMonthIso(todayIso()),
   draft: defaultDraft(),
 };
 
@@ -462,6 +463,7 @@ const storeSectionKeyMap = {
   people: ["clients", "users"],
   catalog: ["inventory", "kits", "addons", "themes"],
   reservations: ["reservations"],
+  availability: ["availabilityBlocks"],
 };
 
 function normalizeStoreSectionList(sections = null) {
@@ -481,6 +483,7 @@ function storeSectionsForAdminTab(tab) {
   const map = {
     dashboard: ["settings", "people", "reservations"],
     reservas: ["settings", "people", "reservations"],
+    agenda: ["people", "reservations", "availability"],
     financeiro: ["settings", "people", "reservations"],
     clientes: ["people"],
     acessos: ["people"],
@@ -494,7 +497,7 @@ function storeSectionsForAdminTab(tab) {
 
 function storeSectionsForClientTab(tab) {
   const map = {
-    orcamento: ["settings", "catalog", "reservations"],
+    orcamento: ["settings", "catalog", "reservations", "availability"],
     "minhas-reservas": ["settings", "reservations"],
   };
   return map[tab] || null;
@@ -880,6 +883,7 @@ function normalizeStore(nextStore) {
   nextStore.themes = (nextStore.themes || []).map(normalizeTheme);
   ensureCustomThemeConfig(nextStore);
   nextStore.paymentMethods = (nextStore.paymentMethods || []).map(normalizePaymentMethod);
+  nextStore.availabilityBlocks = (nextStore.availabilityBlocks || []).map(normalizeAvailabilityBlock);
   nextStore.reservations = (nextStore.reservations || []).map(normalizeReservation);
   const usersById = new Map((nextStore.users || []).map((user) => [user.id, normalizeUser(user)]));
   nextStore.clients.forEach((client) => {
@@ -985,6 +989,38 @@ function normalizePaymentMethod(methodEntry = {}) {
     pixCity: methodEntry.pixCity || "",
     bank: methodEntry.bank || "",
     enabled: methodEntry.enabled !== false,
+  };
+}
+
+async function syncAvailabilityBlockWithApi(block) {
+  if (!canAttemptApiMutation()) return ensureLocalFallbackAvailable();
+
+  const apiResult = await apiMutationWithStore("/availability-blocks", {
+    method: "POST",
+    body: JSON.stringify({ block }),
+  });
+  return applyApiMutationResult(apiResult);
+}
+
+async function toggleAvailabilityBlockWithApi(id, enabled) {
+  if (!canAttemptApiMutation()) return ensureLocalFallbackAvailable();
+
+  const apiResult = await apiMutationWithStore(`/availability-blocks/${encodeURIComponent(id)}/enabled`, {
+    method: "POST",
+    body: JSON.stringify({ enabled }),
+  });
+  return applyApiMutationResult(apiResult);
+}
+
+function normalizeAvailabilityBlock(block = {}) {
+  return {
+    id: String(block.id || ""),
+    startDate: String(block.startDate || block.start_date || "").slice(0, 10),
+    endDate: String(block.endDate || block.end_date || block.startDate || block.start_date || "").slice(0, 10),
+    reason: String(block.reason || "").trim(),
+    enabled: block.enabled !== false,
+    createdByUserId: String(block.createdByUserId || block.created_by_user_id || ""),
+    createdAt: String(block.createdAt || block.created_at || ""),
   };
 }
 
@@ -2109,6 +2145,10 @@ function validateQuoteForm() {
   if (state.draft.phone && !isValidPhone(state.draft.phone)) errors.phone = "Informe um telefone válido.";
   if (state.draft.whatsapp && !isValidPhone(state.draft.whatsapp)) errors.whatsapp = "Informe um WhatsApp válido.";
   if (!state.draft.eventDate || state.draft.eventDate < minEventDate()) errors.eventDate = `A data deve ser a partir de ${dateLabel(minEventDate())}.`;
+  const availabilityBlock = getActiveAvailabilityBlockForDate(state.draft.eventDate);
+  if (state.user?.role === "client" && availabilityBlock) {
+    errors.eventDate = unavailableEventDateMessage(availabilityBlock);
+  }
   if (!state.draft.address.trim()) errors.address = "Informe o endereço do evento.";
   if (isCustomThemeMode() && !state.draft.customTheme.trim()) errors.customTheme = "Informe o tema desejado.";
   if (!themeSelectionName()) errors.themeId = "Escolha um tema ou informe o tema desejado.";
@@ -2238,6 +2278,45 @@ function scrollJourneyStepIntoView() {
 
 function minEventDate() {
   return addDaysIso(todayIso(), 1);
+}
+
+function startOfMonthIso(value) {
+  const iso = String(value || todayIso()).slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(iso) ? `${iso.slice(0, 7)}-01` : `${todayIso().slice(0, 7)}-01`;
+}
+
+function shiftMonthIso(value, offset) {
+  const date = new Date(`${startOfMonthIso(value)}T12:00:00`);
+  date.setMonth(date.getMonth() + Number(offset || 0));
+  return startOfMonthIso(date.toISOString().slice(0, 10));
+}
+
+function agendaMonthLabel(value) {
+  return new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric" })
+    .format(new Date(`${startOfMonthIso(value)}T12:00:00`));
+}
+
+function getActiveAvailabilityBlockForDate(value) {
+  const date = String(value || "").slice(0, 10);
+  if (!date) return null;
+  return (store.availabilityBlocks || []).find((block) => (
+    block.enabled !== false
+      && block.startDate
+      && block.endDate
+      && date >= block.startDate
+      && date <= block.endDate
+  )) || null;
+}
+
+function availabilityBlockDateLabel(block) {
+  if (!block?.startDate) return "Data indisponivel";
+  if (!block.endDate || block.endDate === block.startDate) return dateLabel(block.startDate);
+  return `${dateLabel(block.startDate)} a ${dateLabel(block.endDate)}`;
+}
+
+function unavailableEventDateMessage(block) {
+  const reason = block?.reason ? ` ${block.reason}.` : "";
+  return `Esta data esta indisponivel para novas reservas.${reason}`;
 }
 
 function todayIso() {
@@ -2583,6 +2662,7 @@ function renderNav() {
     return [
       ["dashboard", "Dashboard"],
       ["reservas", "Reservas"],
+      ["agenda", "Agenda"],
       ["financeiro", "Financeiro"],
       ["clientes", "Clientes"],
       ["estoque", "Estoque"],
@@ -2607,6 +2687,7 @@ function adminTabLabel(id) {
   const labels = {
     dashboard: "Dashboard",
     reservas: "Reservas",
+    agenda: "Agenda",
     financeiro: "Financeiro",
     clientes: "Clientes",
     estoque: "Estoque",
@@ -3196,6 +3277,7 @@ function renderReservationRequestForm() {
         <div class="field${fieldErrorClass("eventDate")}">
           <label for="eventDate">Data do evento</label>
           <input id="eventDate" data-draft="eventDate" type="date" min="${minEventDate()}" value="${escapeHtml(d.eventDate || "")}" required />
+          ${renderEventDateAvailabilityHint()}
           ${fieldErrorMessage("eventDate")}
         </div>
         ${
@@ -4374,6 +4456,7 @@ function renderClientReservationRow(entry) {
 
 function renderAdmin() {
   if (state.adminTab === "novo-orcamento") return renderAdminQuoteWorkspace();
+  if (state.adminTab === "agenda") return renderAdminAgenda();
   if (state.adminTab === "financeiro") return renderAdminFinance();
   if (state.adminTab === "clientes") return renderAdminClients();
   if (state.adminTab === "acessos") return renderAdminAccesses();
@@ -4790,6 +4873,132 @@ function renderAdminReservations() {
         </table>
       </div>
     </section>
+  `;
+}
+
+function renderEventDateAvailabilityHint() {
+  if (state.user?.role !== "client") return "";
+  const activeBlocks = (store.availabilityBlocks || []).filter((block) => block.enabled !== false);
+  if (!activeBlocks.length) return `<div class="small-note">Escolha uma data a partir de ${dateLabel(minEventDate())}.</div>`;
+  const preview = activeBlocks.slice(0, 3).map(availabilityBlockDateLabel).join(" · ");
+  const extra = activeBlocks.length > 3 ? ` e mais ${activeBlocks.length - 3}` : "";
+  return `<div class="date-availability-note">Datas indisponiveis: ${escapeHtml(preview)}${escapeHtml(extra)}.</div>`;
+}
+
+function renderAdminAgenda() {
+  const month = startOfMonthIso(state.agendaMonth);
+  const activeBlocks = (store.availabilityBlocks || []).filter((block) => block.enabled !== false);
+  const monthReservations = store.reservations.filter((entry) => String(entry.eventDate || "").slice(0, 7) === month.slice(0, 7));
+  return `
+    <section class="section-title agenda-section-title">
+      <div>
+        <h2>Agenda de reservas</h2>
+        <p>Acompanhe os eventos e controle datas indisponiveis para a jornada do cliente.</p>
+      </div>
+      <div class="section-actions">
+        <button class="primary-button" data-action="new-availability-block">Bloquear data ou periodo</button>
+      </div>
+    </section>
+    <div class="agenda-layout">
+      <section class="panel agenda-calendar-panel">
+        <div class="agenda-toolbar">
+          <button class="secondary-button agenda-month-button" data-agenda-month-shift="-1" aria-label="Mes anterior">Anterior</button>
+          <div>
+            <span class="detail-eyebrow">Agenda mensal</span>
+            <h3>${escapeHtml(agendaMonthLabel(month))}</h3>
+          </div>
+          <div class="agenda-toolbar-actions">
+            <button class="secondary-button" data-agenda-today>Hoje</button>
+            <button class="secondary-button agenda-month-button" data-agenda-month-shift="1" aria-label="Proximo mes">Proximo</button>
+          </div>
+        </div>
+        <div class="agenda-calendar-legend">
+          <span><i class="agenda-legend-dot reservation"></i>Reserva</span>
+          <span><i class="agenda-legend-dot blocked"></i>Data bloqueada</span>
+          <span>${monthReservations.length} evento(s) neste mes</span>
+        </div>
+        <div class="agenda-weekdays" aria-hidden="true">
+          ${["Seg", "Ter", "Qua", "Qui", "Sex", "Sab", "Dom"].map((day) => `<span>${day}</span>`).join("")}
+        </div>
+        <div class="agenda-calendar-grid">
+          ${agendaCalendarDates(month).map((date) => renderAgendaCalendarDay(date, month)).join("")}
+        </div>
+      </section>
+      <aside class="panel agenda-blocks-panel">
+        <div class="panel-header">
+          <div>
+            <h3>Datas indisponiveis</h3>
+            <span class="small-note">${activeBlocks.length} bloqueio(s) ativo(s)</span>
+          </div>
+          <button class="secondary-button" data-action="new-availability-block">Novo</button>
+        </div>
+        <div class="panel-body">
+          ${renderAvailabilityBlocksList()}
+        </div>
+      </aside>
+    </div>
+  `;
+}
+
+function agendaCalendarDates(month) {
+  const firstDate = new Date(`${startOfMonthIso(month)}T12:00:00`);
+  const mondayOffset = (firstDate.getDay() + 6) % 7;
+  const firstCalendarDay = addDaysIso(startOfMonthIso(month), -mondayOffset);
+  return Array.from({ length: 42 }, (_, index) => addDaysIso(firstCalendarDay, index));
+}
+
+function renderAgendaCalendarDay(date, month) {
+  const reservations = store.reservations
+    .filter((entry) => entry.eventDate === date)
+    .sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")));
+  const block = getActiveAvailabilityBlockForDate(date);
+  const classes = [
+    "agenda-day",
+    date.slice(0, 7) === month.slice(0, 7) ? "" : "outside-month",
+    date === todayIso() ? "today" : "",
+    block ? "is-blocked" : "",
+  ].filter(Boolean).join(" ");
+  return `
+    <div class="${classes}">
+      <div class="agenda-day-top">
+        <span class="agenda-day-number">${Number(date.slice(8, 10))}</span>
+        ${block ? `<span class="agenda-block-chip" title="${escapeAttr(block.reason || "Data indisponivel")}">Bloqueado</span>` : ""}
+      </div>
+      ${block?.reason ? `<p class="agenda-block-reason">${escapeHtml(block.reason)}</p>` : ""}
+      <div class="agenda-day-reservations">
+        ${reservations.map((entry) => `
+          <button class="agenda-reservation-entry ${String(entry.status || "").toLowerCase().includes("cancel") ? "is-cancelled" : ""}" data-open-reservation="${escapeAttr(entry.id)}" data-jump-reservations="true" title="Abrir ${escapeAttr(entry.id)}">
+            <strong>${escapeHtml(entry.id)}</strong>
+            <span>${escapeHtml(clientName(entry.clientId))}</span>
+          </button>
+        `).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderAvailabilityBlocksList() {
+  const blocks = [...(store.availabilityBlocks || [])]
+    .sort((a, b) => String(a.startDate || "").localeCompare(String(b.startDate || "")));
+  if (!blocks.length) {
+    return `<div class="empty-state agenda-empty-state">Nenhuma data bloqueada. Os clientes podem solicitar reservas nas datas futuras disponiveis.</div>`;
+  }
+  return `
+    <div class="agenda-block-list">
+      ${blocks.map((block) => `
+        <article class="agenda-block-row ${block.enabled === false ? "is-inactive" : ""}">
+          <div>
+            <strong>${escapeHtml(availabilityBlockDateLabel(block))}</strong>
+            <span>${escapeHtml(block.reason || "Sem motivo informado")}</span>
+            <small>${block.enabled === false ? "Desbloqueado para o cliente" : "Indisponivel para o cliente"}</small>
+          </div>
+          <div class="agenda-block-actions">
+            <button class="ghost-button" data-edit-availability-block="${escapeAttr(block.id)}">Editar</button>
+            <button class="secondary-button" data-toggle-availability-block="${escapeAttr(block.id)}" data-availability-next-enabled="${block.enabled === false ? "true" : "false"}">${block.enabled === false ? "Ativar" : "Desbloquear"}</button>
+          </div>
+        </article>
+      `).join("")}
+    </div>
   `;
 }
 
@@ -5707,6 +5916,8 @@ function renderPhysicalContractUpload(reservation) {
 
 function renderModal() {
   if (!state.modal) return "";
+  if (state.modal.type === "availability-block") return renderAvailabilityBlockModal();
+  if (state.modal.type === "confirm-deposit") return renderConfirmDepositModal();
   if (state.modal.type === "client") return renderClientModal();
   if (state.modal.type === "access") return renderAccessModal();
   if (state.modal.type === "inventory") return renderInventoryModal();
@@ -5739,6 +5950,88 @@ function renderModal() {
             <button class="secondary-button" data-action="print-contract">Imprimir contrato</button>
           </div>
         </div>
+      </section>
+    </div>
+  `;
+}
+
+function renderAvailabilityBlockModal() {
+  const block = state.modal.id
+    ? store.availabilityBlocks.find((entry) => entry.id === state.modal.id)
+    : null;
+  const model = block || {
+    startDate: todayIso(),
+    endDate: todayIso(),
+    reason: "",
+    enabled: true,
+  };
+  return `
+    <div class="modal-backdrop">
+      <section class="modal availability-modal">
+        <div class="modal-title">
+          <div>
+            <h2>${block ? "Editar bloqueio de agenda" : "Bloquear data ou periodo"}</h2>
+            <p>Datas ativas nao podem ser escolhidas pelo cliente ao solicitar uma nova reserva.</p>
+          </div>
+          <button class="ghost-button" data-action="close-modal">Fechar</button>
+        </div>
+        <form class="modal-content" id="availabilityBlockForm" data-id="${escapeAttr(block?.id || "")}" novalidate>
+          <div class="form-grid">
+            <div class="field">
+              <label for="availability-start-date">Data inicial</label>
+              <input id="availability-start-date" name="startDate" type="date" value="${escapeAttr(model.startDate || "")}" required />
+            </div>
+            <div class="field">
+              <label for="availability-end-date">Data final</label>
+              <input id="availability-end-date" name="endDate" type="date" value="${escapeAttr(model.endDate || model.startDate || "")}" required />
+            </div>
+            <div class="field full-span">
+              <label for="availability-reason">Motivo ou observacao</label>
+              <textarea id="availability-reason" name="reason" placeholder="Ex.: Ferias do Atelie, data ja ocupada ou manutencao.">${escapeHtml(model.reason || "")}</textarea>
+            </div>
+            <label class="choice-option full-span">
+              <input name="enabled" type="checkbox" ${model.enabled === false ? "" : "checked"} />
+              Manter este bloqueio ativo para os clientes
+            </label>
+          </div>
+          <div class="actions">
+            <button class="primary-button" type="submit" ${pendingDisabledAttr()}>${pendingLabel("save-availability-block", block ? "Salvar bloqueio" : "Bloquear periodo", "Salvando...")}</button>
+            <button class="secondary-button" type="button" data-action="close-modal">Cancelar</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  `;
+}
+
+function renderConfirmDepositModal() {
+  const reservation = store.reservations.find((entry) => entry.id === state.modal.id);
+  if (!reservation) return "";
+  const values = state.modal.values || {};
+  return `
+    <div class="modal-backdrop">
+      <section class="modal confirm-deposit-modal">
+        <div class="modal-title">
+          <div>
+            <h2>Confirmar sinal e reserva</h2>
+            <p>${escapeHtml(reservation.id)} · ${escapeHtml(clientName(reservation.clientId))}</p>
+          </div>
+          <button class="ghost-button" data-action="close-modal">Fechar</button>
+        </div>
+        <form class="modal-content" id="confirmDepositModalForm" data-id="${escapeAttr(reservation.id)}" novalidate>
+          <div class="hint-box">
+            A data de entrega/coleta ainda nao foi definida. Voce pode informa-la agora ou confirmar a reserva sem essa informacao.
+          </div>
+          <div class="field">
+            <label for="confirm-delivery-date">Data entrega/coleta</label>
+            <input id="confirm-delivery-date" name="deliveryDate" type="date" min="${escapeAttr(reservation.eventDate || minEventDate())}" value="${escapeAttr(values.deliveryDate || "")}" />
+          </div>
+          <div class="actions">
+            <button class="primary-button" type="submit" ${pendingDisabledAttr()}>Confirmar reserva</button>
+            <button class="secondary-button" type="button" data-confirm-deposit-without-delivery="${escapeAttr(reservation.id)}">Confirmar sem data</button>
+            <button class="secondary-button" type="button" data-action="close-modal">Cancelar</button>
+          </div>
+        </form>
       </section>
     </div>
   `;
@@ -6811,6 +7104,11 @@ async function submitQuote() {
     showToast(`A data do evento deve ser a partir de ${dateLabel(minEventDate())}.`, "error");
     return false;
   }
+  const unavailableDate = getActiveAvailabilityBlockForDate(state.draft.eventDate);
+  if (state.user?.role === "client" && unavailableDate) {
+    showToast(unavailableEventDateMessage(unavailableDate), "warning");
+    return false;
+  }
   state.draft.returnDate = addDaysIso(state.draft.eventDate, 1);
   state.draft.deliveryDate = state.user?.role === "client" ? "" : state.draft.deliveryDate || state.draft.eventDate;
   const selectedKit = getSelectedKit();
@@ -7014,6 +7312,75 @@ async function confirmDeposit(id, values = readAdminReservationFieldValues()) {
   entry.status = "Reserva confirmada";
   entry.contractGeneratedAt = entry.contractGeneratedAt || new Date().toISOString();
   saveStore();
+}
+
+async function requestDepositConfirmation(id, values = readAdminReservationFieldValues(), afterConfirm = "") {
+  if (values.deliveryDate) {
+    await completeDepositConfirmation(id, values, afterConfirm);
+    return;
+  }
+
+  state.modal = {
+    type: "confirm-deposit",
+    id,
+    values: { ...values },
+    afterConfirm,
+  };
+  render();
+}
+
+async function saveAvailabilityBlockFromForm(form) {
+  const formData = new FormData(form);
+  const block = normalizeAvailabilityBlock({
+    id: form.dataset.id || "",
+    startDate: formData.get("startDate"),
+    endDate: formData.get("endDate"),
+    reason: formData.get("reason"),
+    enabled: formData.get("enabled") === "on",
+  });
+
+  if (!block.startDate || !block.endDate) {
+    throw new Error("Informe a data inicial e a data final do bloqueio.");
+  }
+  if (block.endDate < block.startDate) {
+    throw new Error("A data final deve ser igual ou posterior a data inicial.");
+  }
+
+  if (await syncAvailabilityBlockWithApi(block)) {
+    state.modal = null;
+    return;
+  }
+
+  const localBlock = {
+    ...block,
+    id: block.id || `agenda-${Date.now()}`,
+    createdByUserId: state.user?.id || "",
+    createdAt: new Date().toISOString(),
+  };
+  const index = store.availabilityBlocks.findIndex((entry) => entry.id === localBlock.id);
+  if (index >= 0) store.availabilityBlocks[index] = localBlock;
+  else store.availabilityBlocks.push(localBlock);
+  state.modal = null;
+  saveStore();
+}
+
+async function toggleAvailabilityBlock(id, enabled) {
+  if (await toggleAvailabilityBlockWithApi(id, enabled)) return;
+  const block = store.availabilityBlocks.find((entry) => entry.id === id);
+  if (!block) return;
+  block.enabled = enabled;
+  saveStore();
+}
+
+async function completeDepositConfirmation(id, values, afterConfirm = "") {
+  state.modal = null;
+  await runAction("confirm-deposit", async () => {
+    await confirmDeposit(id, values);
+    if (afterConfirm === "admin-journey") {
+      state.clientStep = 5;
+      state.newQuoteMode = false;
+    }
+  }, "Sinal confirmado e reserva liberada com sucesso.");
 }
 
 async function cancelReservation(id) {
@@ -7527,6 +7894,21 @@ document.addEventListener("submit", async (event) => {
     await runAction("client-registration", () => submitClientRegistrationRequest(event.target), "");
     return;
   }
+  if (event.target.id === "confirmDepositModalForm") {
+    event.preventDefault();
+    const modal = state.modal;
+    const deliveryDate = String(new FormData(event.target).get("deliveryDate") || "");
+    await completeDepositConfirmation(event.target.dataset.id, {
+      ...(modal?.values || {}),
+      deliveryDate,
+    }, modal?.afterConfirm || "");
+    return;
+  }
+  if (event.target.id === "availabilityBlockForm") {
+    event.preventDefault();
+    await runAction("save-availability-block", () => saveAvailabilityBlockFromForm(event.target), "Agenda atualizada com sucesso.");
+    return;
+  }
   if (state.pendingAction) {
     event.preventDefault();
     return;
@@ -7726,6 +8108,12 @@ document.addEventListener("click", async (event) => {
     render();
     return;
   }
+  if (target.dataset.action === "new-availability-block") {
+    clearFormState();
+    state.modal = { type: "availability-block" };
+    render();
+    return;
+  }
   if (target.dataset.action === "close-modal") {
     state.modal = null;
     clearFormState();
@@ -7765,6 +8153,45 @@ document.addEventListener("click", async (event) => {
   }
   if (target.dataset.action === "print-contract" || target.dataset.action === "print-checklist") window.print();
   if (target.dataset.action === "clear-signature") clearSignaturePad();
+  if (target.dataset.agendaMonthShift) {
+    state.agendaMonth = shiftMonthIso(state.agendaMonth, Number(target.dataset.agendaMonthShift));
+    render();
+    return;
+  }
+  if (target.dataset.agendaToday !== undefined) {
+    state.agendaMonth = startOfMonthIso(todayIso());
+    render();
+    return;
+  }
+  if (target.dataset.editAvailabilityBlock) {
+    clearFormState();
+    state.modal = { type: "availability-block", id: target.dataset.editAvailabilityBlock };
+    render();
+    return;
+  }
+  if (target.dataset.toggleAvailabilityBlock) {
+    try {
+      const nextEnabled = target.dataset.availabilityNextEnabled === "true";
+      await runAction(
+        "toggle-availability-block",
+        () => toggleAvailabilityBlock(target.dataset.toggleAvailabilityBlock, nextEnabled),
+        nextEnabled ? "Data liberada novamente para o cliente." : "Data bloqueada para novas reservas de cliente.",
+      );
+    } catch (error) {
+      console.error(error);
+      showToast(error?.userMessage || "Nao foi possivel atualizar o bloqueio da agenda.", "error");
+      render();
+    }
+    return;
+  }
+  if (target.dataset.confirmDepositWithoutDelivery) {
+    const modal = state.modal;
+    await completeDepositConfirmation(target.dataset.confirmDepositWithoutDelivery, {
+      ...(modal?.values || {}),
+      deliveryDate: "",
+    }, modal?.afterConfirm || "");
+    return;
+  }
   if (target.dataset.adminTab) {
     const nextAdminTab = target.dataset.adminTab;
     await runNavigationLoading(`Abrindo ${adminTabLabel(nextAdminTab)} e atualizando dados do portal.`, async () => {
@@ -7894,17 +8321,14 @@ document.addEventListener("click", async (event) => {
     const values = {
       deposit: entry?.signalDue || entry?.total * 0.5 || 0,
       paymentMethod: entry?.paymentMethod || state.draft.paymentMethod,
+      deliveryDate: entry?.deliveryDate || "",
     };
-    await runAction("confirm-deposit", async () => {
-      await confirmDeposit(id, values);
-      state.clientStep = 5;
-      state.newQuoteMode = false;
-    }, "Sinal confirmado e contrato liberado com sucesso.");
+    await requestDepositConfirmation(id, values, "admin-journey");
     return;
   }
   if (target.dataset.confirmDeposit) {
     const values = readAdminReservationFieldValues();
-    await runAction("confirm-deposit", () => confirmDeposit(target.dataset.confirmDeposit, values), "Sinal confirmado e reserva liberada com sucesso.");
+    await requestDepositConfirmation(target.dataset.confirmDeposit, values);
     return;
   }
   if (target.dataset.saveReservationStatus) {
@@ -8135,6 +8559,16 @@ document.addEventListener("change", async (event) => {
   if (target.dataset.draft) {
     state.draft[target.dataset.draft] = target.value;
     syncDraftDateFields(target.dataset.draft);
+    if (target.dataset.draft === "eventDate" && state.user?.role === "client") {
+      const block = getActiveAvailabilityBlockForDate(target.value);
+      if (block) {
+        state.draft.eventDate = "";
+        state.draft.returnDate = "";
+        showToast(unavailableEventDateMessage(block), "warning");
+        render();
+        return;
+      }
+    }
     if (target.dataset.draft === "customTheme" && isCustomThemeMode()) state.selectedThemeId = "";
   }
   if (target.dataset.paymentMethod) {
